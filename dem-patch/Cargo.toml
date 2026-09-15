@@ -8,8 +8,22 @@
 # workspace member — meant the bit-level demo reader/writer had no test or lint
 # coverage at all. Rewritten 2026-09-10.
 #
-# Upstream authorship and licence are unchanged; see LICENSE and the repository
-# link below.
+# Upstream authorship is unchanged; see the repository link below.
+#
+# LICENCE: LGPL-3.0, matching upstream. The vendored source is crates.io `dem`
+# v0.2.3, which `.cargo_vcs_info.json` records as upstream commit 0bddfd5
+# ("bump version", 2025-03-19). That commit is a direct ancestor of e72684f
+# ("change license from GPLv3 to LGPLv3", 2026-05-10) -- four commits later,
+# with nothing between them on another branch -- so the relicence covers this
+# lineage, and LICENSE now carries upstream's LGPL-3.0 text taken from that
+# commit. It previously carried the older GPL-3.0 text, which is what upstream
+# shipped at the time this crate was vendored.
+#
+# `license-file` is deliberately kept instead of an SPDX `license` field:
+# choosing between `LGPL-3.0-only` and `LGPL-3.0-or-later` would be an
+# assertion about upstream's intent that upstream has not made itself (it sets
+# only `license-file`, and adds no per-file licence headers). The file is the
+# honest statement of terms.
 
 [package]
 name = "dem"

@@ -82,6 +82,22 @@ library's built-in initial delta table where one exists and returns a graceful
 parse failure otherwise. As of upstream v0.3.0 all 29 of those call sites are
 still present, so the patch is still required.
 
+## Licensing
+
+This project is MIT (see `LICENSE`), with one exception: **`dem-patch/` is
+LGPL-3.0**, not MIT. It is a vendored fork of upstream `dem` and keeps
+upstream's terms; `dem-patch/LICENSE` is the authority for that directory.
+
+Because `dem-patch/` is linked into every binary this workspace builds, anyone
+redistributing those binaries is redistributing LGPL-3.0 code and takes on that
+licence's obligations for the library portion -- principally the requirement
+that recipients be able to relink against a modified version of it. The MIT
+licence at the repository root does not override that, and is not intended to
+suggest otherwise.
+
+Local modifications to `dem-patch/` are described under *Why the fork of `dem`*
+above and are themselves LGPL-3.0, being changes to an LGPL work.
+
 ## Documentation
 
 Engineering notes live in `docs/` — architecture decisions, GoldSrc and DoD
