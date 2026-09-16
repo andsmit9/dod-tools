@@ -39,7 +39,9 @@ jobs:
         with:
           workspaces: ". -> target"
 
-      # Version must match web-analyzer/Cargo.toml's pinned wasm-bindgen dependency exactly.
+      # Version must match the workspace's pinned wasm-bindgen dependency exactly
+      # (`wasm-bindgen = "=0.2.126"` under [workspace.dependencies] in the root
+      # Cargo.toml; web-analyzer takes it from there).
       - name: Install wasm-bindgen CLI
         run: cargo install wasm-bindgen-cli --version 0.2.126 --locked
 

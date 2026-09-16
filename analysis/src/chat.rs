@@ -68,21 +68,21 @@ pub fn use_chat_updates(state: &mut AnalyzerState, event: &AnalyzerEvent) {
 
             // 1. Try to find the split position based on player name first (if player is resolved)
             let mut split_pos = None;
-            if say_text.client_index > 0 {
-                if let Some(player) = state.find_player_by_client_index(say_text.client_index - 1) {
+            if say_text.client_index > 0
+                && let Some(player) = state.find_player_by_client_index(say_text.client_index - 1) {
                     let p_name = &player.name;
                     if let Some(name_pos) = cleaned_raw.find(p_name) {
                         let after_name = &cleaned_raw[name_pos + p_name.len()..];
-                        if after_name.starts_with(" :  ") {
-                            split_pos = Some(name_pos + p_name.len() + 1);
-                        } else if after_name.starts_with(" : ") {
+                        // `" :  "` (two spaces) is subsumed by `" : "` and
+                        // resolved to the same split position, so it never
+                        // needed an arm of its own.
+                        if after_name.starts_with(" : ") {
                             split_pos = Some(name_pos + p_name.len() + 1);
                         } else if after_name.starts_with(":") {
                             split_pos = Some(name_pos + p_name.len());
                         }
                     }
                 }
-            }
 
             let (sender_block, message_text) = if let Some(pos) = split_pos {
                 let sender = &cleaned_raw[..pos];
@@ -363,26 +363,22 @@ pub fn translate_system_message(
             format!("{} is ready", name)
         } else {
             let mut parts = vec![token.to_string()];
-            if let Some(arg) = a1 {
-                if !arg.is_empty() {
+            if let Some(arg) = a1
+                && !arg.is_empty() {
                     parts.push(arg.to_string());
                 }
-            }
-            if let Some(arg) = a2 {
-                if !arg.is_empty() {
+            if let Some(arg) = a2
+                && !arg.is_empty() {
                     parts.push(arg.to_string());
                 }
-            }
-            if let Some(arg) = a3 {
-                if !arg.is_empty() {
+            if let Some(arg) = a3
+                && !arg.is_empty() {
                     parts.push(arg.to_string());
                 }
-            }
-            if let Some(arg) = a4 {
-                if !arg.is_empty() {
+            if let Some(arg) = a4
+                && !arg.is_empty() {
                     parts.push(arg.to_string());
                 }
-            }
             parts.join(" ")
         }
     };
@@ -601,15 +597,14 @@ mod tests {
                 let path = entry.path();
                 if path.extension().map(|e| e == "dem").unwrap_or(false) {
                     println!("Analyzing chat for untranslated keys in {:?}", path);
-                    if let Ok(bytes) = fs::read(&path) {
-                        if let Ok(analysis) = crate::Analysis::try_from_bytes(&bytes) {
+                    if let Ok(bytes) = fs::read(&path)
+                        && let Ok(analysis) = crate::Analysis::try_from_bytes(&bytes) {
                             for msg in &analysis.state.chat_messages {
                                 if msg.text.contains('#') {
                                     println!("  [UNTRANSLATED] {:?}", msg.text);
                                 }
                             }
                         }
-                    }
                 }
             }
         }

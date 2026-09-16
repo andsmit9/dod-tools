@@ -359,7 +359,7 @@ without the flag — which is what made it look like the flag was being ignored 
 This is invisible to static analysis: the binary's string table gives you the switch names but cannot
 tell you which ones consume an argument. Reading `Launcher.cs` is what settled it.
 
-The set now sent, gated on separate HUD:
+The set now sent, on every `-customLoader` launch:
 
     -gl -32bpp -afxRenderMode standard -afxForceAlpha8 1
 
@@ -374,6 +374,29 @@ A real matte: white on the kill feed, weapon icons and objective boxes, black ev
 `-afxOptimizeCaptureVis` is deliberately still not sent — a visibility optimisation, unrelated to
 alpha — and the set has not been bisected to find the minimum; `-32bpp` in particular is untested on
 its own, though a framebuffer without 32-bit colour has no alpha bits to force.
+
+### Ungated, 2026-09-08
+
+The flags were originally composed in `capture_engine` and gated on `separate_hud`, which meant they
+only ever reached a **capture batch**. The two hand-driven launches — the standalone "Launch Game
+(HLAE)" button and Launch Preview — pass through the same `build_hlae_process` with their own
+`extra_engine_args` and got none of it, so a session started that way ran with the alpha buffer off.
+
+That surfaced on a real capture: a 7598-frame take recorded by hand out of a "Launch Game (HLAE)"
+session, with `mirv_movie_separate_hud 1` typed in the console, wrote a `hudalpha` stream that is
+`255` on every plane of every frame. `extractplanes=r` then feeds `alphamerge` an all-opaque matte,
+and the render produces a technically-correct ProRes 4444 whose alpha channel is uniformly 255 —
+`min=255 max=255 distinct=1`. Nothing in the pipeline reported a fault; the only symptom was a HUD
+that would not composite in the NLE, and the natural workaround (chroma-keying the black background)
+partially keys every anti-aliased glyph edge, which reads as translucency.
+
+HLAE's own `<Launcher><ForceAlpha>` in `hlaeconfig.xml` is **not** a fallback for this. That is the
+Launch GoldSrc dialog's checkbox; `ProcessArgsCustomLoader` never reads it. It can be `true` in the
+config file while every launch this app makes runs without alpha.
+
+The flags now live in `build_hlae_process` and are sent unconditionally. The gate bought nothing:
+forcing 32-bit colour and alpha costs a capture that writes no HUD stream exactly nothing, and no
+code here can know what the user will type into the console mid-session.
 
 Both faults are now fixed and Separate HUD works with direct-to-video capture. The guard that blocked
 the pairing has been removed.

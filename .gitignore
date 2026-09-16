@@ -17,6 +17,13 @@ hlcr_config.json
 # === Dependencies & Local Binaries ===
 /demos/
 /ffmpeg/
+# Untracked 2026-09-10: 293MB of ffmpeg.exe/ffplay.exe/ffprobe.exe had been
+# committed since the first GUI commit and referenced by nothing. FFmpeg is
+# resolved at runtime by render_manager.rs's resolve_ffmpeg(): user override,
+# then `local/tools/ffmpeg.exe` beside the *installed* binary (under /local/,
+# already ignored below), then bare `ffmpeg` on PATH. Nothing ever read this
+# folder, and tauri.conf.json never bundled it.
+/tools/
 
 # === Demo Files ===
 # Guard against demos landing anywhere outside /demos/ (gitignored scratch

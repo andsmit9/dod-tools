@@ -85,23 +85,20 @@ impl Default for RenderConfig {
 }
 
 pub fn get_config_path() -> PathBuf {
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(parent) = exe_path.parent() {
+    if let Ok(exe_path) = std::env::current_exe()
+        && let Some(parent) = exe_path.parent() {
             return parent.join("hlcr_config.json");
         }
-    }
     PathBuf::from("hlcr_config.json")
 }
 
 pub fn load_config() -> RenderConfig {
     let path = get_config_path();
-    if path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(config) = serde_json::from_str::<RenderConfig>(&content) {
+    if path.exists()
+        && let Ok(content) = std::fs::read_to_string(&path)
+            && let Ok(config) = serde_json::from_str::<RenderConfig>(&content) {
                 return config;
             }
-        }
-    }
     let default_config = RenderConfig::default();
     let _ = save_config(&default_config);
     default_config

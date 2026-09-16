@@ -201,10 +201,6 @@ pub fn final_init_commands(config: &PatcherConfig) -> Vec<String> {
     let mut out = config.init_commands.clone();
     out.push("sys_autodir".to_string());
     out.push(format!("mirv_movie_fps {}", config.capture_fps));
-    out.push(format!(
-        "mirv_movie_separate_hud {}",
-        if config.separate_hud { "1" } else { "0" }
-    ));
 
     // OBS mode is real time: HLAE issues no `mirv_movie_start` at all, so
     // `mirv_movie_fps` above is inert on this path — nothing reads it. What
@@ -560,8 +556,8 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
         date_time
     ));
     // Marks exactly where this file execs relative to the engine's own
-    // config.cfg/movie.cfg chain, which lands in qconsole.log too (with
-    // Add Condebug on) — cheap enough to leave in permanently rather than
+    // config.cfg/movie.cfg chain, which lands in qconsole.log too (-condebug
+    // is passed on every launch) — cheap enough to leave in permanently rather than
     // re-add it every time this ordering question comes up again. See
     // docs/goldsrc_dod_quirks.md's Command Precedence entry.
     helper_cfg_content.push_str("echo dodtools_helper.cfg exec'd here\n\n");
@@ -651,9 +647,6 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
         let first_source = sorted_groups[0].0.0.to_string();
         let mut primer_init = config.init_commands.clone();
         primer_init.push("sys_autodir".to_string());
-        
-        let separate_hud_str = if config.separate_hud { "1" } else { "0" };
-        primer_init.push(format!("mirv_movie_separate_hud {}", separate_hud_str));
 
         // Every patched demo lands directly in the game's own dod/ folder --
         // that's the only place GoldSrc's `playdemo` can find it. This used
@@ -826,8 +819,7 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
             &mut drive_free,
             &mut active_drive_idx,
             FAILOVER_THRESHOLD,
-        ).map_err(|_| std::io::Error::new(
-            std::io::ErrorKind::Other,
+        ).map_err(|_| std::io::Error::other(
             "Insufficient space across all mapped drives to allocate a block"
         ))?;
 
@@ -1192,7 +1184,7 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
             
             if !junction_str.is_empty() && !target_str.is_empty() {
                 let _ = std::process::Command::new("cmd")
-                    .args(&["/C", "mklink", "/J", junction_str, target_str])
+                    .args(["/C", "mklink", "/J", junction_str, target_str])
                     .output();
             }
         }
@@ -1241,79 +1233,33 @@ pub struct WorkspaceGuard {
 impl Drop for WorkspaceGuard {
     fn drop(&mut self) {
         // Junction link: remove_dir unlinks without touching the junction target.
-        if let Err(e) = std::fs::remove_dir(&self.session_junction) {
-            if e.kind() != std::io::ErrorKind::NotFound {
+        if let Err(e) = std::fs::remove_dir(&self.session_junction)
+            && e.kind() != std::io::ErrorKind::NotFound {
                 log::warn!("[WorkspaceGuard::drop] Failed to remove session_junction {:?}: {}", self.session_junction, e);
             }
-        }
         // Unlink every dod_pool_N and _route_N junction. `remove_dir` unlinks a
         // junction without touching what it points at, and NotFound is expected
         // for any index this batch did not route to.
         for junction in self.pool_junctions.iter().chain(self.route_junctions.iter()) {
-            if let Err(e) = std::fs::remove_dir(junction) {
-                if e.kind() != std::io::ErrorKind::NotFound {
+            if let Err(e) = std::fs::remove_dir(junction)
+                && e.kind() != std::io::ErrorKind::NotFound {
                     log::warn!("[WorkspaceGuard::drop] Failed to remove pool junction {:?}: {}", junction, e);
                 }
-            }
         }
         // Signal dirs (DOD_TOOLS_EXIT_TRIGGER) are directories, not files.
         // Use remove_dir_all; silently ignore NotFound, log anything else.
-        if let Err(e) = std::fs::remove_dir_all(&self.exit_trigger) {
-            if e.kind() != std::io::ErrorKind::NotFound {
+        if let Err(e) = std::fs::remove_dir_all(&self.exit_trigger)
+            && e.kind() != std::io::ErrorKind::NotFound {
                 log::warn!("[WorkspaceGuard::drop] Failed to remove exit_trigger {:?}: {}", self.exit_trigger, e);
             }
-        }
-        if let Some(parent) = self.exit_trigger.parent() {
-            let dod_dir = parent.join("dod");
-            
-            if self.auto_clear_logs {
-                crate::shared::paths::remove_console_log(parent);
-                let _ = std::fs::remove_file(dod_dir.join("dodtools_helper.cfg"));
-                let _ = std::fs::remove_file(dod_dir.join("dodtools_capture_done.cfg"));
-                let _ = std::fs::remove_file(dod_dir.join("dod_quit.cfg"));
-                if let Ok(entries) = std::fs::read_dir(&dod_dir) {
-                    for entry in entries.flatten() {
-                        let filename = entry.file_name().to_string_lossy().to_string();
-                        if filename.starts_with("dodtools_chain_") && filename.ends_with(".cfg") {
-                            let _ = std::fs::remove_file(entry.path());
-                        }
-                    }
-                }
-            }
-            
-            if self.auto_clear_temp_demos && !self.save_local_patched_copy {
-                let _ = std::fs::remove_file(dod_dir.join("primer.dem"));
-                if let Ok(entries) = std::fs::read_dir(&dod_dir) {
-                    for entry in entries.flatten() {
-                        let filename = entry.file_name().to_string_lossy().to_string();
-                        if crate::shared::paths::is_chain_demo_filename(&filename) {
-                            let _ = std::fs::remove_file(entry.path());
-                        }
-                    }
-                }
-            }
-
-            if self.auto_clear_previews {
-                let scan_dirs = vec![dod_dir.clone(), parent.to_path_buf()];
-                for scan_dir in scan_dirs {
-                    if let Ok(entries) = std::fs::read_dir(scan_dir) {
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            if path.is_file() {
-                                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                                    if filename.ends_with("_preview.dem") {
-                                        let sidecar = path.with_extension("dodtools_preview");
-                                        if sidecar.exists() {
-                                            let _ = std::fs::remove_file(&path);
-                                            let _ = std::fs::remove_file(sidecar);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if let Some(game_root) = self.exit_trigger.parent() {
+            crate::shared::paths::clear_capture_scratch(
+                game_root,
+                self.auto_clear_logs,
+                self.auto_clear_temp_demos,
+                self.auto_clear_previews,
+                self.save_local_patched_copy,
+            );
         }
     }
 }
@@ -2617,6 +2563,39 @@ mod tests {
         );
 
         assert_eq!(result, Err(0));
+    }
+
+    /// A regression guard for #198's fix -- `workspace_guard_drop_actually_
+    /// removes_chain_demos_when_auto_clear_is_on` above already covers the
+    /// enabled case; this is the one combination it doesn't, and the reason
+    /// `remove_file_retrying` is called through `auto_clear_temp_demos &&
+    /// !save_local_patched_copy` rather than unconditionally.
+    #[test]
+    fn dropping_the_workspace_guard_keeps_demos_when_a_local_copy_was_requested() {
+        let root = std::env::temp_dir().join(format!("dod_workspace_guard_keep_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dod = root.join("dod");
+        std::fs::create_dir_all(&dod).unwrap();
+        std::fs::write(dod.join("primer.dem"), b"x").unwrap();
+        std::fs::write(dod.join("chain_01.dem"), b"x").unwrap();
+
+        {
+            let _guard = WorkspaceGuard {
+                session_junction: root.join("session_junction"),
+                exit_trigger: root.join("exit_trigger"),
+                pool_junctions: vec![],
+                route_junctions: vec![],
+                auto_clear_logs: false,
+                auto_clear_temp_demos: true,
+                auto_clear_previews: false,
+                save_local_patched_copy: true,
+            };
+        }
+
+        assert!(dod.join("primer.dem").exists());
+        assert!(dod.join("chain_01.dem").exists());
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
 

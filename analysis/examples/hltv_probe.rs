@@ -55,7 +55,7 @@ fn main() {
                                 .split('\\')
                                 .collect();
                             let f: HashMap<&str, &str> =
-                                parts.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+                                parts.as_chunks::<2>().0.iter().map(|&[k, v]| (k, v)).collect();
                             if f.get("*hltv") == Some(&"1") {
                                 hltv_slot_in_userinfo = true;
                             }

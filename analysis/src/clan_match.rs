@@ -24,11 +24,10 @@ pub fn use_clan_match_detection_updates(
     // at any point — including mid-demo after joining a live match — is a
     // definitive clan-match signal that doesn't depend on the Reset→Start
     // sequence being present in the recording.
-    if let AnalyzerEvent::UserMessage(UserMessage::WaveTime(wave_time)) = event {
-        if wave_time.0 > Duration::ZERO {
+    if let AnalyzerEvent::UserMessage(UserMessage::WaveTime(wave_time)) = event
+        && wave_time.0 > Duration::ZERO {
             state.clan_match_detected = true;
         }
-    }
 
     match (&state.clan_match_detection, event) {
         // ClanTimer fires when the countdown to a clan match begins. Observing

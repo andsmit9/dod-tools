@@ -131,10 +131,14 @@ impl LogTailer {
 
     /// Reads whatever has been appended since the last call.
     ///
-    /// Handles the file being deleted or truncated underneath — which happens
-    /// when a batch's cleanup runs, or when the engine starts a fresh log — by
-    /// rewinding to zero. A shrinking file is a new file, and its content is
-    /// live rather than history.
+    /// Handles the file being deleted or truncated underneath by rewinding to
+    /// zero. A shrinking file is a new file, and its content is live rather than
+    /// history.
+    ///
+    /// The only thing that actually shortens it is a batch's own cleanup
+    /// (`auto_clear_logs`). The engine **appends** across launches — measured on
+    /// a 1.5 MB `qconsole.log` holding 100 startup banners — so this rewind is
+    /// defensive rather than a path the engine drives.
     pub fn poll(&mut self) -> Vec<Marker> {
         let Ok(mut file) = std::fs::File::open(&self.path) else {
             // Not there yet, or just removed. Either way the next thing written
@@ -346,7 +350,7 @@ mod tests {
         f.flush().unwrap();
         assert!(t.poll().is_empty(), "half a line is not a marker yet");
 
-        write!(f, "CORD - Tick 99\n").unwrap();
+        writeln!(f, "CORD - Tick 99").unwrap();
         f.flush().unwrap();
         let got = t.poll();
         assert_eq!(got.len(), 1);

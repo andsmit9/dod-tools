@@ -133,21 +133,6 @@ async fn start_capture_batch(
     capture_manager::start_capture_batch_impl(app_handle, &state, payload).await
 }
 
-#[tauri::command]
-fn simulate_aot_capacity(
-    streaks: Vec<f32>,
-    fps: u32,
-    bytes_per_frame: u64,
-    available_bytes: u64,
-) -> Result<(u64, bool), String> {
-    Ok(capture_manager::simulate_aot_capacity(
-        streaks,
-        fps,
-        bytes_per_frame,
-        available_bytes,
-    ))
-}
-
 /// Cancel a running capture batch.
 #[tauri::command]
 async fn cancel_capture_batch(state: tauri::State<'_, CaptureManager>) -> Result<(), String> {
@@ -159,18 +144,6 @@ async fn cancel_capture_batch(state: tauri::State<'_, CaptureManager>) -> Result
         .cancel_token
         .store(true, std::sync::atomic::Ordering::Relaxed);
     Ok(())
-}
-
-/// Returns whether a capture batch is currently running.
-#[tauri::command]
-fn capture_status(state: tauri::State<'_, CaptureManager>) -> bool {
-    state.is_running()
-}
-
-/// Scaffolding command kept for bridge smoke-testing.
-#[tauri::command]
-fn test_bridge(path: String) -> String {
-    format!("Tauri Backend received target: {}. Engine ready.", path)
 }
 
 /// Writes one line to today's activity log from the frontend. Exists for
@@ -191,20 +164,6 @@ fn get_activity_log_path() -> String {
 
 #[tauri::command]
 async fn scan_directory(
-    app_handle: tauri::AppHandle,
-    scan_state: tauri::State<'_, ScanManager>,
-    paths: Vec<String>,
-) -> Result<Vec<capture_manager::SerializedDemo>, String> {
-    capture_manager::scan_directory_impl(
-        app_handle,
-        Arc::clone(&scan_state.is_scanning),
-        Arc::clone(&scan_state.cancel_token),
-        paths,
-    ).await
-}
-
-#[tauri::command]
-async fn scan_demos(
     app_handle: tauri::AppHandle,
     scan_state: tauri::State<'_, ScanManager>,
     paths: Vec<String>,
@@ -545,7 +504,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            test_bridge,
             log_frontend_event,
             get_activity_log_path,
             validate_paths,
@@ -568,13 +526,10 @@ pub fn run() {
             scan_orphaned_previews,
             delete_orphaned_previews,
             cancel_capture_batch,
-            capture_status,
             scan_directory,
-            scan_demos,
             cancel_scan,
             calculate_export_pool_space,
             diagnose_capture_output_paths,
-            simulate_aot_capacity,
             queue_render_batch,
             start_queued_render,
             cancel_render_batch,
@@ -603,7 +558,6 @@ pub fn run() {
             dir_browser::scan_demo_folders,
             map_manager::check_demo_maps,
             map_manager::download_map,
-            map_manager::map_download_url,
             map_manager::scan_game_configs,
             map_manager::roll_floors,
             updater_manager::check_for_update,

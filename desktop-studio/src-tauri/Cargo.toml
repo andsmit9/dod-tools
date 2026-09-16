@@ -1,22 +1,31 @@
 [package]
 name = "desktop-studio"
+# Deliberately NOT `version.workspace = true`. This is the shipped app's own
+# version line and the workspace's is the library crates' — two different
+# things that happen to look like a typo side by side. release_stable.yml
+# reads the major.minor from *this* file to compute the next release tag
+# (see docs/versioning_and_releases.md), so moving it to the workspace value
+# would silently renumber every release.
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+description = "Capture, patch and analyze Day of Defeat 1.3 demos"
+authors = ["ccoventry"]
+edition.workspace = true
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "desktop_studio_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# rlib only. The Tauri scaffold ships `["staticlib", "cdylib", "rlib"]` so the
+# same crate can be linked into an iOS/Android host; this app is Windows-only
+# desktop and main.rs just calls `desktop_studio_lib::run()`. The other two
+# were costing a 205MB .lib and a .dll per build that nothing ever linked.
+# Add `cdylib` back if Tauri mobile ever becomes a target.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
-indexmap = { version = "1.9.3", features = ["std"] }
+indexmap = { workspace = true }
 
 [dependencies]
 tauri = { version = "2", features = [] }
@@ -25,24 +34,24 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde = { workspace = true }
+serde_json = { workspace = true }
 url = "2"
 native = { path = "../../native" }
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
-log = "0.4"
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros"] }
+log = { workspace = true }
 dod = { path = "../../dod" }
 analysis = { path = "../../analysis" }
 hl-demo-auditor = { path = "../../hl-demo-auditor" }
-indexmap = { version = "1.9.3", features = ["std"] }
-dirs = "5"
-sysinfo = "0.30"
+indexmap = { workspace = true }
+dirs = { workspace = true }
+sysinfo = { workspace = true }
 
+# No [profile.release] here on purpose. Cargo ignores profiles on non-root
+# workspace packages and prints a warning for every command in the workspace
+# when one is present. The root Cargo.toml already sets codegen-units = 1,
+# lto = true, opt-level = 3 and panic = "abort"; `strip` is the only thing
+# that was here and not there, and it is set at the workspace root now.
 
-# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
-[profile.release]
-codegen-units = 1
-lto = true
-opt-level = 3
-panic = "abort"
-strip = true
+[lints]
+workspace = true

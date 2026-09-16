@@ -310,12 +310,10 @@ export const STRINGS = {
     BROWSE_BUTTON: 'Browse',
     WIDTH_LABEL: 'Width:',
     HEIGHT_LABEL: 'Height:',
-    SEPARATE_HUD_LABEL: 'Separate HUD',
     DECAL_FLUSH_LABEL: 'Flush Decals Between Clips',
     DECAL_FLUSH_TITLE:
       'Clear bullet holes and blood off the walls between one clip and the next, so a later capture does not inherit the damage from an earlier one. Off captures the walls exactly as the engine leaves them. How many decals the engine keeps is a separate thing — set r_decals in Initial Commands.',
     SAVE_LOCAL_PATCHED_LABEL: 'Save Local Patched Copy',
-    ADD_CONDEBUG_LABEL: 'Add Condebug',
     PRE_ROLL_LABEL: 'Pre-roll (s):',
     PRE_ROLL_HINT: 'Time between fast-forward stopping and capture starting.',
     POST_ROLL_LABEL: 'Post-roll (s):',
@@ -360,9 +358,9 @@ export const STRINGS = {
     NOTIFY_PATCHING_LABEL: 'Patching Started/Complete',
     NOTIFY_PATCHING_TITLE: 'One notification when patching begins, one when your demos are ready and capture is about to start. Not per-demo — decal clearing makes patching take real time now, but a toast per demo patched would be noise.',
     NOTIFY_DEMO_LOADING_LABEL: 'Demo Loading',
-    NOTIFY_DEMO_LOADING_TITLE: 'Fires each time a new demo starts playing during capture, showing which demo and how many clips are on it. Requires "Add Condebug" to be on — silently never fires otherwise. Automatically skipped when Fast-Forward to Clip is also on, since that notification covers the same ground with more detail.',
+    NOTIFY_DEMO_LOADING_TITLE: 'Fires each time a new demo starts playing during capture, showing which demo and how many clips are on it. Automatically skipped when Fast-Forward to Clip is also on, since that notification covers the same ground with more detail.',
     NOTIFY_BETWEEN_CLIPS_LABEL: 'Fast-Forward to Clip',
-    NOTIFY_BETWEEN_CLIPS_TITLE: 'Fires as playback starts fast-forwarding toward each clip, including the first one in a demo. Requires "Add Condebug" to be on — silently never fires otherwise.',
+    NOTIFY_BETWEEN_CLIPS_TITLE: 'Fires as playback starts fast-forwarding toward each clip, including the first one in a demo.',
     NOTIFY_CAPTURES_DONE_LABEL: 'Captures Done',
     NOTIFY_CAPTURES_DONE_TITLE: 'Fires once when the whole capture batch finishes.',
     NOTIFY_RENDERS_DONE_LABEL: 'Renders Done',
@@ -778,6 +776,8 @@ export const STRINGS = {
     BRITISH_LABEL: 'British',
 
     TEAM_SCORE_TIMELINE_TITLE: 'Team Score Timeline',
+    TIMELINE_TOOLTIP_ELAPSED_LABEL: 'Time Elapsed:',
+    TIMELINE_TOOLTIP_TIMESTAMP_LABEL: 'Demo Timestamp:',
 
     ROUNDS_TITLE: 'Rounds',
     COL_ROUND_NUM: '#',
@@ -899,7 +899,6 @@ export const STRINGS = {
     // can name the control rather than leaving the user to hunt for it.
     SETTING_FOR_CVAR: {
       mirv_movie_fps: 'Output Format → Capture FPS',
-      mirv_movie_separate_hud: 'Output Format → Separate HUD',
       r_decals: 'Pipeline → Flush Decals Between Clips',
     },
     UNKNOWN_SETTING: 'its own setting',
@@ -914,6 +913,9 @@ export const STRINGS = {
       mirv_recordmovie_start: 'the app schedules this itself; a manual one will break the automation',
       mirv_recordmovie_stop: 'the app schedules this itself; a manual one will break the automation',
       mirv_movie_filename: 'set the save location in the Destinations tab instead',
+      r_drawentities:
+        "the engine resets this to 1 by itself, so it does nothing -- and if cheats are on instead, DoD's client closes the game",
+      cl_lw: "DoD's client quits the game outright if this is not 1 -- there is no other value",
       // Fine as Initial Commands — that's how the decal flush is meant to be
       // configured — but banned_scheduled only ever reports these three when
       // they show up as Scheduled Commands instead, so the reason is always
@@ -925,7 +927,7 @@ export const STRINGS = {
     bannedRowDetailed: (command, reason) => (reason ? `${command} — not allowed: ${reason}` : `${command} — not allowed`),
     HAZARD_TITLE: 'These Scheduled Commands are redundant with a Configuration setting:',
     HAZARD_ADVICE:
-      "mirv_movie_fps and mirv_movie_separate_hud are already pinned every capture from Output Format's own Capture FPS / Separate HUD settings — a scheduled one here just fights the value the pipeline sets on its own. Not dangerous, just pointless.",
+      "mirv_movie_fps is already pinned every capture from Output Format's own Capture FPS setting — a scheduled one here just fights the value the pipeline sets on its own. Not dangerous, just pointless.",
     CUSTOM_TITLE: 'These Scheduled Commands override earlier values:',
     CUSTOM_ADVICE:
       'Scheduled commands run during playback, so they come after your configs and after the Initial Commands — they are the last word on whatever they set, and the only place a value changes partway through a capture.',
@@ -944,6 +946,11 @@ export const STRINGS = {
     DECAL_NOOP_ADVICE:
       "r_decals is 0, so the flush's sweep finds an empty ring every clip — real work for no effect. State a nonzero r_decals in Initial Commands, or turn off Flush Decals Between Clips in the Pipeline tab.",
     DECAL_NOOP_ROW: 'r_decals 0 — clears nothing',
+    FATAL_TITLE: 'These config values will quit the game:',
+    FATAL_ADVICE:
+      "DoD's own client checks these whenever the HUD is on screen, and for most cvars it just forces the right value back silently. For these it also closes the game outright rather than merely correcting course. Nothing here changes your config files -- open the file named above and remove the line, or give it the value DoD requires. Setting it in Initial Commands instead is not a way round this: the app refuses these there, for the same reason.",
+    fatalRow: (cvar, value, required, file, line) =>
+      `${cvar} ${value} — DoD requires ${required}, set in ${file}, line ${line}`,
     NOOP_TITLE: 'These commands have no effect:',
     NOOP_ADVICE:
       'The pipeline (or the engine itself) always overrides or drops these before they could ever apply — not wrong, just wasted keystrokes.',
@@ -1062,7 +1069,6 @@ export const STRINGS = {
     launchFailed: (err) => `Launch failed: ${err}`,
     killEngineFailed: (err) => `Failed to close running engine processes: ${err}`,
     batchPreviewFailed: (err) => `Batch preview generation failed: ${err}`,
-    simulationError: (err) => `Simulation error: ${err}`,
     cancelScanError: (err) => `Cancel scan error: ${err}`,
     settingsLoadFailed: (err) => `Failed to load settings: ${err}`,
     settingsSaveFailed: (err) => `Failed to save settings: ${err}`,

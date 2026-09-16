@@ -84,7 +84,7 @@ fn main() {
         for file in &group.files {
             report_content.push_str(&format!("  - `{}`\n", file.display()));
         }
-        report_content.push_str("\n");
+        report_content.push('\n');
     }
 
     if let Err(e) = fs::write("demo_deduplication_report.md", &report_content) {

@@ -64,8 +64,8 @@ fn inspect_single_demo(path: &Path) -> Result<InspectResult, String> {
     for entry in &demo.directory.entries {
         for frame in &entry.frames {
             frames += 1;
-            if let FrameData::NetworkMessage(box_type) = &frame.frame_data {
-                if let MessageData::Parsed(msgs) = &box_type.1.messages {
+            if let FrameData::NetworkMessage(box_type) = &frame.frame_data
+                && let MessageData::Parsed(msgs) = &box_type.1.messages {
                     for net_msg in msgs {
                         if let NetMessage::UserMessage(user_msg) = net_msg {
                             let name = String::from_utf8_lossy(&user_msg.name)
@@ -75,7 +75,6 @@ fn inspect_single_demo(path: &Path) -> Result<InspectResult, String> {
                         }
                     }
                 }
-            }
         }
     }
 
@@ -139,7 +138,7 @@ fn main() {
     let unique_files_arc = std::sync::Arc::new(unique_files);
     let (tx, rx) = std::sync::mpsc::channel();
 
-    let chunk_size = (limit + num_threads - 1) / num_threads;
+    let chunk_size = limit.div_ceil(num_threads);
 
     for thread_idx in 0..num_threads {
         let tx = tx.clone();
@@ -214,7 +213,7 @@ fn main() {
 
     println!("\n### Map Distributions ###");
     let mut sorted_maps: Vec<_> = map_counts.into_iter().collect();
-    sorted_maps.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted_maps.sort_by_key(|&(_, count)| std::cmp::Reverse(count));
     for (map, count) in sorted_maps {
         println!("  - {:.<30} {} demos", map, count);
     }
@@ -228,7 +227,7 @@ fn main() {
     );
 
     let mut sorted_messages: Vec<_> = message_counts.into_iter().collect();
-    sorted_messages.sort_by(|a, b| b.1.cmp(&a.1));
+    sorted_messages.sort_by_key(|&(_, count)| std::cmp::Reverse(count));
 
     for (name, count) in sorted_messages {
         let demos_with_msg = message_demos.get(&name).cloned().unwrap_or(0);
@@ -248,7 +247,7 @@ fn scan_dir(dir: &Path, files: &mut Vec<PathBuf>) {
                 scan_dir(&path, files);
             } else if path
                 .extension()
-                .map_or(false, |ext| ext.eq_ignore_ascii_case("dem"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("dem"))
             {
                 files.push(path);
             }

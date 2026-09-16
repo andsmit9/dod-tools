@@ -340,7 +340,7 @@ window.addEventListener("DOMContentLoaded", () => {
  * own chained demo. One fifteen-row table turned into five passes over the same
  * file.
  */
-export function isVisibleStreak(demo, streak, minKills) {
+function isVisibleStreak(demo, streak, minKills) {
   if (!demo || !streak) return false;
   if (demo.local_player_index !== null && demo.local_player_index !== undefined) {
     if (streak.player_index !== demo.local_player_index) return false;
@@ -608,7 +608,7 @@ export function renderDetailView(demo, selectedDemoIdx) {
   renderTimeline(demo);
 }
 
-export function renderTimeline(demo) {
+function renderTimeline(demo) {
   const canvas = document.querySelector('#streak-timeline-canvas');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');

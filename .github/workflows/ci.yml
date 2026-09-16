@@ -29,6 +29,49 @@ jobs:
       - name: cargo test --workspace
         run: cargo test --workspace
 
+  clippy:
+    name: Clippy
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned, unlike the test job above, which stays on `stable` on purpose --
+      # a new Rust breaking the build is something we want to hear about. A lint
+      # gate is different: every Rust release ships new clippy lints, so
+      # `@stable` + `-D warnings` means a PR that was green yesterday goes red
+      # today with nobody having touched the code. That happened on the first
+      # run of this job (PR #232): local clippy was 1.96.1, CI's stable had
+      # moved to 1.98.1, and `chunks_exact_to_as_chunks` -- new in 1.98 -- failed
+      # it in eleven places.
+      #
+      # Bumping this is a deliberate act: raise the version, run it, fix or
+      # allow what the new release found, in its own commit. To reproduce a
+      # failure locally without changing your default toolchain:
+      #
+      #   rustup toolchain install 1.98.1 --component clippy --profile minimal
+      #   rustup run 1.98.1 cargo clippy --workspace --all-targets -- -D warnings
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      # --all-targets so examples and test code are linted too: native/examples/
+      # is where the R&D probes live, and letting them rot silently is how the
+      # ~200 warnings this gate was introduced against accumulated.
+      #
+      # The allow-list lives in the root Cargo.toml under
+      # [workspace.lints.clippy], one commented entry per judgement that clippy
+      # is wrong for this codebase. Add there, with a reason, rather than
+      # loosening this step.
+      #
+      # No `cargo fmt --check` alongside it, deliberately: this tree has never
+      # been rustfmt-formatted (847 files differ), so gating on it would mean a
+      # whole-repo reformat that conflicts with every open branch. That is a
+      # separate decision, not a side effect of adding a lint gate.
+      - name: cargo clippy -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
   frontend-tests:
     name: Frontend e2e tests
     runs-on: windows-latest

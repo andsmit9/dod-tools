@@ -30,6 +30,7 @@ const EMPTY = {
   decalFlushIsNoop: false,
   noopInit: [],
   noopScheduled: [],
+  fatalCvars: [],
 };
 
 let report = EMPTY;
@@ -143,6 +144,7 @@ function render() {
   const decalFlushIsNoop = report?.decalFlushIsNoop ?? false;
   const noopInit = report?.noopInit ?? [];
   const noopScheduled = report?.noopScheduled ?? [];
+  const fatalCvars = report?.fatalCvars ?? [];
   // Banned commands are already flagged, more specifically, in the banned
   // section above — MID_DEMO_HAZARDS is a superset of BANNED_COMMANDS on the
   // Rust side, so without this a banned command would otherwise also show up
@@ -156,8 +158,19 @@ function render() {
   // Game Config (unseen) belongs here, not its own block: the fix it advises
   // is "state this in Initial Commands", so that is where seeing it is useful.
   const initParts = [];
-  // First of all — this one blocks Start Capture Batch, everything else
-  // below it is merely advisory.
+  // First of all, and ahead of even the block-on-Start-Capture-Batch case
+  // below: a config already sitting on disk will quit the game outright the
+  // moment the HUD renders, whether or not this batch ever starts. Nothing
+  // here can fix a file the app does not write to, so it is not blocking --
+  // but it is the most severe fact this banner can report.
+  if (fatalCvars.length > 0) {
+    const rows = fatalCvars
+      .map((f) => `<li><code>${STRINGS.CFG.fatalRow(f.cvar, f.value, f.required, f.file, f.line)}</code></li>`)
+      .join('');
+    initParts.push(section(STRINGS.CFG.FATAL_TITLE, STRINGS.CFG.FATAL_ADVICE, rows, '#f44336'));
+  }
+  // Next — this one blocks Start Capture Batch, everything else below it is
+  // merely advisory.
   if (bannedInit.length > 0) {
     const rows = bannedInit
       .map((b) => `<li><code>${STRINGS.CFG.bannedRowDetailed(b.command, STRINGS.CFG.BANNED_REASONS[cvarOf(b.command)])}</code></li>`)

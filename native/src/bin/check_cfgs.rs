@@ -92,6 +92,21 @@ fn main() {
         }
     }
 
+    let fatal = cfg_scan::fatal_cvar_hazards(&scan);
+    if !fatal.is_empty() {
+        println!("\nWill quit the game the moment the HUD renders:");
+        for f in &fatal {
+            println!(
+                "  {:<12} {:<8} DoD requires {} ({}:{})",
+                f.cvar,
+                f.value,
+                f.required,
+                f.file_name(),
+                f.line
+            );
+        }
+    }
+
     if !scan.unreferenced.is_empty() {
         println!("\nConfigs present that nothing execs (they set nothing today):");
         for p in &scan.unreferenced {
