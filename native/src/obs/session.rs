@@ -548,7 +548,7 @@ mod tests {
     #[test]
     fn folds_a_recording_into_the_stream_folder() {
         let root = scratch("fold");
-        let dest = root.join("chain_01_b0").join(TAKE_FOLDER).join(STREAM_FOLDER);
+        let dest = root.join("dodtools_chain_01_b0").join(TAKE_FOLDER).join(STREAM_FOLDER);
         std::fs::create_dir_all(&dest).unwrap();
         let recorded = dest.join("2026-08-28 03-26-01.mp4");
         std::fs::write(&recorded, b"x").unwrap();
