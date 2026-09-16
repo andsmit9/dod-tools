@@ -913,6 +913,9 @@ export const STRINGS = {
       mirv_recordmovie_start: 'the app schedules this itself; a manual one will break the automation',
       mirv_recordmovie_stop: 'the app schedules this itself; a manual one will break the automation',
       mirv_movie_filename: 'set the save location in the Destinations tab instead',
+      r_drawentities:
+        "the engine resets this to 1 by itself, so it does nothing -- and if cheats are on instead, DoD's client closes the game",
+      cl_lw: "DoD's client quits the game outright if this is not 1 -- there is no other value",
       // Fine as Initial Commands — that's how the decal flush is meant to be
       // configured — but banned_scheduled only ever reports these three when
       // they show up as Scheduled Commands instead, so the reason is always
@@ -943,6 +946,11 @@ export const STRINGS = {
     DECAL_NOOP_ADVICE:
       "r_decals is 0, so the flush's sweep finds an empty ring every clip — real work for no effect. State a nonzero r_decals in Initial Commands, or turn off Flush Decals Between Clips in the Pipeline tab.",
     DECAL_NOOP_ROW: 'r_decals 0 — clears nothing',
+    FATAL_TITLE: 'These config values will quit the game:',
+    FATAL_ADVICE:
+      "DoD's own client checks these whenever the HUD is on screen, and for most cvars it just forces the right value back silently. For these it also closes the game outright rather than merely correcting course. Nothing here changes your config files -- open the file named above and remove the line, or give it the value DoD requires. Setting it in Initial Commands instead is not a way round this: the app refuses these there, for the same reason.",
+    fatalRow: (cvar, value, required, file, line) =>
+      `${cvar} ${value} — DoD requires ${required}, set in ${file}, line ${line}`,
     NOOP_TITLE: 'These commands have no effect:',
     NOOP_ADVICE:
       'The pipeline (or the engine itself) always overrides or drops these before they could ever apply — not wrong, just wasted keystrokes.',

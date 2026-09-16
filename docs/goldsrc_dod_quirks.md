@@ -33,6 +33,42 @@
 
 - **Scanner Section Boundary Truncation (`type_byte == 5`):** The engine's scanner stops accumulating `frame_times` at the startup section boundary. Do not rely on localized arrays mapping 1:1 with global ticks without proper offset math.
 
+## Cvar Enforcement: DoD's Client and GoldSrc's Clamp
+
+Two independent enforcement layers act on cvars, and they are easy to mistake for
+each other when something quits unexpectedly.
+
+**DoD's client (`client.dll`, `CHud::Redraw` at `0x1936e20`).** If `r_drawentities`
+or `cl_lw` is not `1`, it forces the value back, prints *"... is not a valid
+command. Do not use it."*, and calls `quit` — the process exits rather than merely
+correcting course. The `quit` is assembled byte-by-byte on the stack
+(`'q','u','i','t','\n'`) instead of being stored as a literal, which is why no
+`strings` dump of the binary reveals it. Three siblings in the same routine
+(`cl_pitchup`, `cl_pitchdown`, `crosshair`) are corrected silently without quitting.
+
+**It only runs when the HUD draws.** Not "every frame" — every frame *that draws the
+HUD*. With the console open the check does not run at all, so a value can be set and
+put back with no consequence; the quit lands the moment the console closes. This is
+the single most confusing thing about testing it by hand, and the reason an earlier
+write-up of this called it a per-frame check.
+
+**GoldSrc's own clamp (`hw.dll`, `0x1d455c9`), gated on `sv_cheats`.** A hardcoded
+list of renderer cvars is reset to fixed values whenever `sv_cheats` is `0`:
+`r_drawentities` back to the string `"1.0"`, gamma back to `"1.8"`, and several
+others. This is not a cvar flag — `r_drawentities` has `flags = 0x0`; the list lives
+in engine code, and `sv_cheats` itself is the `cvar_t` at `0x1e56404`.
+
+**The consequence, and why the two lists in `cfg_scan` differ.** With `sv_cheats 0`
+— which is the default, and which the pipeline never changes — `r_drawentities`
+cannot be moved off `1` at all, so DoD's quit branch for it is unreachable and a
+config line setting it is *inert*. `cl_lw` has no such clamp, takes the value it is
+given, and genuinely kills the game. Both are refused as typed commands
+(`BANNED_COMMANDS`); only `cl_lw` is an unconditional `FATAL_CVARS` entry, while
+`r_drawentities` is reported only when the same config also enables cheats. See
+`FatalCvar::needs_sv_cheats`.
+
+Verified live and by disassembly of both binaries, 2026-09-16.
+
 ## NetworkMessage Quirks & HLTV Protocol
 - **DRC_CMD_CAMERA Structure:** The `DRC_CMD_CAMERA` subcommand is a 30+ byte cinematic vector command (coordinates, FOV, direction vectors), not a 1-byte entity lock.
 - **Stream Alignment Crashing:** Custom `svc_director` payloads must not be appended or prepended inside existing `NetworkMessage` packets. Modifying payload lengths without recalculating internal offsets crashes the parser with `FATAL ERROR: Server::ParsePacketEntities: entnum>MAX_PACKET_ENTITIES`.
