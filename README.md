@@ -84,9 +84,10 @@ still present, so the patch is still required.
 
 ## Licensing
 
-This project is MIT (see `LICENSE`). The copyright line there is Charles
-D'Angelo's, from [cgdangelo/dod-tools](https://github.com/cgdangelo/dod-tools),
-which this is a fork of — MIT requires that notice be kept, so it stays.
+This project is MIT (see `LICENSE`), which carries two copyright lines.
+Charles D'Angelo's is from [cgdangelo/dod-tools](https://github.com/cgdangelo/dod-tools),
+which this is a fork of — MIT requires that notice be retained, so it stays.
+The second covers the work done here since the fork.
 
 One directory is **not** MIT: **`dem-patch/` is LGPL-3.0**. It is a vendored
 fork of upstream [`dem`](https://github.com/khanghugo/dem) and keeps upstream's
