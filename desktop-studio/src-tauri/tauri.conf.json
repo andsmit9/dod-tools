@@ -37,7 +37,7 @@
     ],
     "resources": {
       "../../localizations": "localizations",
-      "../../target/i686-pc-windows-msvc/release/goldsrc_hooks.dll": "goldsrc-hooks/goldsrc_hooks.dll"
+      "../../target/i686-pc-windows-msvc/release/dodtoolsHookGoldSrc.dll": "goldsrc-hooks/dodtoolsHookGoldSrc.dll"
     }
   },
   "plugins": {

@@ -34,7 +34,7 @@ rustup target add i686-pc-windows-msvc   # one-time
 cargo build -p goldsrc-hooks --release --target i686-pc-windows-msvc --bins
 ```
 
-Produces `target/i686-pc-windows-msvc/release/goldsrc_hooks.dll` and
+Produces `target/i686-pc-windows-msvc/release/dodtoolsHookGoldSrc.dll` and
 `inject.exe`.
 
 ## Testing manually
@@ -44,8 +44,8 @@ Produces `target/i686-pc-windows-msvc/release/goldsrc_hooks.dll` and
 3. Set whichever env var(s) you want *before* launching `hl.exe` --
    `inject.exe` only delivers the DLL, it doesn't set environment variables
    for a process that's already running.
-4. `inject.exe <pid> path\to\goldsrc_hooks.dll`
-5. Check `%TEMP%\goldsrc_hooks.log` for its own diagnostics (never pops a
+4. `inject.exe <pid> path\to\dodtoolsHookGoldSrc.dll`
+5. Check `%APPDATA%\dod-tools\logs\dodtoolsHookGoldSrc.log` for its own diagnostics (never pops a
    dialog -- this is meant to run inside an unattended capture pipeline).
 
 ## Status

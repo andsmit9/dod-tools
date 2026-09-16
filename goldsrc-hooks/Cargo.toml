@@ -4,7 +4,19 @@ version.workspace = true
 edition.workspace = true
 
 [lib]
+# The shipped filename, deliberately echoing HLAE's own
+# `AfxHookGoldSrc.dll`: this DLL is injected into `hl.exe` right beside it, and
+# a name that rhymes makes the kinship (and the different owner) obvious in a
+# module list. Cargo derives the artifact name from this, so dev and installed
+# builds agree. The package and directory stay `goldsrc-hooks` -- that is our
+# own namespace, and no sibling crate carries a prefix.
+name = "dodtoolsHookGoldSrc"
 crate-type = ["cdylib"]
+
+# The mixed-case `[lib] name` above is a deliberate filename choice, not an
+# identifier; rustc lints the crate name for snake case regardless.
+[lints.rust]
+non_snake_case = "allow"
 
 [dependencies]
 windows-sys = { version = "0.59", features = [
