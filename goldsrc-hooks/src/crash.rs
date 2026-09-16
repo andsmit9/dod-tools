@@ -153,9 +153,9 @@ fn stack_trail(esp: usize) -> Vec<String> {
 
 /// Whether `len` bytes at `address` are committed, so reading them cannot
 /// fault. Checked before the stack scan rather than leaving the re-entrancy
-/// flag to catch the fallout.
-#[cfg(target_arch = "x86")]
-fn readable(address: usize, len: usize) -> bool {
+/// flag to catch the fallout, and used by [`crate::deathmsg`] to sanity-check
+/// a pointer the game is about to dereference without checking it itself.
+pub(crate) fn readable(address: usize, len: usize) -> bool {
     // Safety: as in `locate` — writes a struct we own, never faults.
     let mut info: MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
     let written = unsafe {

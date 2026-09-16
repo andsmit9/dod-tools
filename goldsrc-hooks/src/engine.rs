@@ -98,6 +98,13 @@ pub type AddCommandFn = unsafe extern "C" fn(cmd_name: *const c_char, function: 
 /// hook wins, and `client.dll`'s own handler is still reachable by calling it
 /// directly. Verified in `hw.dll` at 0x1d1a830 (hook) and 0x1d1a660
 /// (dispatch), pre-Anniversary. See `deathmsg.rs`.
+/// `gEngfuncs.GetLocalPlayer` (slot 51). Returns the local player's
+/// `cl_entity_t`. Confirmed by the call site at `client.dll+0x20520`, a
+/// three-instruction thunk that calls this slot and immediately
+/// dereferences the result -- so the engine is expected to return something
+/// readable, and `client.dll` does not check.
+pub type GetLocalPlayerFn = unsafe extern "C" fn() -> *mut c_void;
+
 pub type HookUserMsgFn =
     unsafe extern "C" fn(msg_name: *const c_char, pfn: UserMsgHookFn) -> i32;
 /// `int (*pfnUserMsgHook)(const char *pszName, int iSize, void *pbuf)`.
@@ -404,7 +411,8 @@ pub struct ClEngineFuncsPartial {
     _slots_before_cmd_argc: [*mut c_void; 7], // pfnCenterPrint .. Cvar_SetValue
     pub cmd_argc: CmdArgcFn,
     pub cmd_argv: CmdArgvFn,
-    _slots_before_viewmodel: [*mut c_void; 12], // Con_Printf .. GetLocalPlayer
+    _slots_before_get_local_player: [*mut c_void; 11], // Con_Printf .. IsNoClipping
+    pub get_local_player: GetLocalPlayerFn,
     pub get_view_model: GetViewModelFn,
     pub get_entity_by_index: GetEntityByIndexFn,
     _slots_before_weapon_anim: [*mut c_void; 12], // GetClientTime .. pfnPlaybackEvent

@@ -137,21 +137,34 @@ why `deathmsg.rs` records RVAs and rebases them through the live module handle
 rather than using literals — `client.dll` does not opt into ASLR, but a base
 conflict still relocates it.
 
-The full patch is 40 operands:
+The full patch is 42 operands. **Every address in `deathmsg.rs` is the address
+of the encoded operand, not of the instruction containing it** — the two differ
+by 1, 2 or 4 bytes depending on the encoding, and getting that wrong reads a
+plausible-looking number and writes into the middle of an instruction:
 
-| what | RVA | stock |
-| --- | --- | --- |
-| 33 array references | various | `&rgDeathNoticeList + field` |
-| scan sentinel `cmp eax, &list[MAX].iId` | `0x2b23d` | `array + 0x2f0` |
-| `InitHUDData: mov ecx, (MAX+1)*156/4` | `0x2ae51` | `0xc3` |
-| `Draw: mov ecx, MAX*156` | `0x2af5f` | `0x270` |
-| `Draw: cmp eax, MAX` | `0x2b173` | `4` (imm8) |
-| `MsgFunc: cmp edi, MAX` | `0x2b243` | `4` (imm8) |
-| `MsgFunc: push MAX*156` | `0x2b248` | `0x270` |
-| `MsgFunc: mov edi, MAX-1` | `0x2b25f` | `3` |
+| what | instruction | operand | stock |
+| --- | --- | --- | --- |
+| 33 array references | various | various | `&rgDeathNoticeList + field` |
+| scan sentinel `3d` `cmp eax, &list[MAX].iId` | `0x2b23c` | `0x2b23d` | `array + 0x2f0` |
+| `InitHUDData: b9` `mov ecx, (MAX+1)*156/4` | `0x2ae51` | `0x2ae52` | `0xc3` |
+| `Draw: b9` `mov ecx, MAX*156` | `0x2af5f` | `0x2af60` | `0x270` |
+| `Draw: 83 f8` `cmp eax, MAX` | `0x2b173` | `0x2b175` | `4` (imm8) |
+| `MsgFunc: 83 ff` `cmp edi, MAX` | `0x2b243` | `0x2b245` | `4` (imm8) |
+| `MsgFunc: 68` `push MAX*156` | `0x2b248` | `0x2b249` | `0x270` |
+| `MsgFunc: bf` `mov edi, MAX-1` | `0x2b25f` | `0x2b260` | `3` |
+| `Draw: c7 44 24 04` `mov [esp+4], 20` | `0x2aef0` | `0x2aef4` | `20` |
+| `Draw: 83 c0` `add eax, 20` | `0x2af19` | `0x2af1b` | `20` (imm8) |
 
 The sentinel is held apart from the other 33 because its value depends on the
 line count, not just the base.
+
+The last eight rows shipped in the first version as *instruction* addresses,
+which the Rust code then read as operand addresses. `verify_stock` caught it in
+game and refused to patch anything — `count at +0x2ae51 reads 0xc3b9, expected
+0xc3`, which is the `b9` opcode byte read as part of the dword. Neither the unit
+tests nor the first version of the verifier caught it: the tests only check the
+arithmetic, and the verifier hardcoded its own `+1`/`+2` offsets instead of
+checking the ones Rust uses. That gap is now closed — see below.
 
 **The ceiling is 127**, set by the two `cmp r32, imm8` loop bounds. Widening
 those instructions would overwrite the ones after them.
@@ -209,22 +222,57 @@ already running.
 ### Re-verifying the offsets
 
 `goldsrc-hooks/tools/verify_deathmsg_offsets.py` re-derives the whole table from
-a real `client.dll` and diffs it against `deathmsg.rs`, then applies the patch
-in memory for several line counts and checks both functions still decode to the
-same instruction sequence. Run it after any change to the tables:
+a real `client.dll` and diffs it against `deathmsg.rs`; confirms every address
+in every Rust table really *is* an encoded operand of the declared width holding
+the shipped value; checks the ceiling still fits; then applies the patch in
+memory for several line counts and checks both functions still decode to the
+same instruction sequence. The second of those is the one that catches an
+instruction address mistaken for an operand address. Run it after any change to
+the tables:
 
 ```
 python goldsrc-hooks/tools/verify_deathmsg_offsets.py [path-to-client.dll]
 ```
 
-## 5. What is not yet proven
+## 5. Live findings, 2026-09-16
 
-**That the `.text` writes stick at runtime.** `max` and `offset` patch
-`client.dll`'s own code through `VirtualProtect`. Issue #204 recorded
-`client.dll` behaving as though hardened, and nothing offline can settle whether
-a write is permitted in a live session. If it is not, `block` and `fake` are
-unaffected — they touch no code — and `max`/`offset` report the failure rather
-than silently doing nothing.
+**`fake` takes the game down, and where is now known exactly.** The DLL installs
+a vectored exception handler (`goldsrc-hooks/src/crash.rs`) precisely because
+GoldSrc swallows its own unhandled exceptions and exits without a dump, a WER
+record or an event-log entry. It caught this:
+
+```
+CRASH: access violation at client.dll+0x20526 -- reading 0xbb8
+  eip=...0526 eax=0x00000bb8 ecx=0x00000000
+  [esp+0x00c] client.dll+0x2b21f     <- returning into MsgFunc_DeathMsg
+```
+
+`client.dll+0x20520` is three instructions:
+
+```asm
++0x20520  call dword ptr [gEngfuncs + 0xcc]   ; GetLocalPlayer, slot 51
++0x20526  mov  eax, dword ptr [eax]           ; ->index
++0x20528  ret
+```
+
+`gViewPort->DeathMsg(killer, victim)` (`+0x802f0`) calls it **unconditionally**,
+to compare the local player's index against the victim's and hide the scoreboard
+on a match. `GetLocalPlayer` returned `0xbb8` — 3000, which is a small multiple
+of `sizeof(cl_entity_t)`, i.e. an index computed off a null entity array — and
+`client.dll` dereferences it without checking.
+
+Because that path is unconditional it runs for every *real* death notice too, so
+this is not about the arguments `fake` was given. `fake` now reads the pointer
+itself and refuses with a message rather than letting the game vanish, and logs
+the value either way. What remains open is why the engine hands back a bad
+pointer when the call originates from a console command rather than from the
+message dispatcher.
+
+**Still unproven: that the `.text` writes stick at runtime.** `max` and `offset`
+patch `client.dll`'s own code through `VirtualProtect`, and issue #204 recorded
+`client.dll` behaving as though hardened. The first live run never got far
+enough to answer it — `verify_stock` refused on the operand-address bug above,
+which is exactly what that pre-flight check exists to do.
 
 Everything in §§2–3 is derived from the shipped binaries and is independent of
-that question.
+both questions.

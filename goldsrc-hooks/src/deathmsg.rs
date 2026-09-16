@@ -123,12 +123,13 @@ const SENTINEL_RVA: usize = 0x2_b23d;
 /// The count constants, as `(rva_of_the_operand, width_in_bytes, what)`.
 #[rustfmt::skip]
 const COUNT_SITES: &[(usize, usize, CountKind)] = &[
-    (0x2_ae51, 4, CountKind::MemsetDwords),  // InitHUDData: mov ecx, (MAX+1)*ITEM/4
-    (0x2_af5f, 4, CountKind::MemmoveBytes),  // Draw:        mov ecx, MAX*ITEM
-    (0x2_b173, 1, CountKind::Max),           // Draw:        cmp eax, MAX
-    (0x2_b243, 1, CountKind::Max),           // MsgFunc:     cmp edi, MAX
-    (0x2_b248, 4, CountKind::MemmoveBytes),  // MsgFunc:     push MAX*ITEM
-    (0x2_b25f, 4, CountKind::MaxMinusOne),   // MsgFunc:     mov edi, MAX-1
+    //  imm     width                        instruction (at the RVA in the comment)
+    (0x2_ae52, 4, CountKind::MemsetDwords),  // +0x2ae51 InitHUDData: b9 mov ecx, (MAX+1)*ITEM/4
+    (0x2_af60, 4, CountKind::MemmoveBytes),  // +0x2af5f Draw:        b9 mov ecx, MAX*ITEM
+    (0x2_b175, 1, CountKind::Max),           // +0x2b173 Draw:        83 f8 cmp eax, MAX
+    (0x2_b245, 1, CountKind::Max),           // +0x2b243 MsgFunc:     83 ff cmp edi, MAX
+    (0x2_b249, 4, CountKind::MemmoveBytes),  // +0x2b248 MsgFunc:     68 push MAX*ITEM
+    (0x2_b260, 4, CountKind::MaxMinusOne),   // +0x2b25f MsgFunc:     bf mov edi, MAX-1
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -153,7 +154,10 @@ impl CountKind {
 
 /// The two immediates that set the y the first notice draws at. The second is
 /// an `add eax, imm8`, which is what caps [`MAX_OFFSET`].
-const OFFSET_SITES: &[(usize, usize)] = &[(0x2_aef0, 4), (0x2_af19, 1)];
+const OFFSET_SITES: &[(usize, usize)] = &[
+    (0x2_aef4, 4), // +0x2aef0  c7 44 24 04  mov dword ptr [esp+4], 20
+    (0x2_af1b, 1), // +0x2af19  83 c0        add eax, 20
+];
 
 /// Ceiling on `offset`, set by the `add eax, imm8` in `Draw`'s spectator
 /// branch. 127 screen pixels down from the top is a long way for a kill feed;
@@ -453,6 +457,34 @@ fn fake(killer: i32, victim: i32, weapon: i32) -> Result<(), String> {
     let Ok(name) = CString::new("DeathMsg") else {
         return Err("could not build the message name".to_string());
     };
+
+    // `MsgFunc_DeathMsg` reaches `gViewPort->DeathMsg`, which reaches a thunk
+    // at `client.dll+0x20520` that is exactly three instructions:
+    //
+    //     call [gEngfuncs + 0xcc]   ; GetLocalPlayer, slot 51
+    //     mov  eax, [eax]           ; ->index
+    //     ret
+    //
+    // There is no null check, and the path is unconditional -- every death
+    // notice, real or faked, goes through it. Whatever the engine hands back
+    // gets dereferenced. So check it here, because the alternative is not an
+    // error message but the game vanishing: that is how this was found, at
+    // `reading 0xbb8` with `eax = 0xbb8`, a pointer computed off a null base.
+    let Some(engfuncs) = engine::engfuncs() else {
+        return Err("the engine function table is not available yet".to_string());
+    };
+    let local_player = unsafe { (engfuncs.get_local_player)() } as usize;
+    unsafe {
+        crate::debug::report(&format!(
+            "deathmsg: fake -- GetLocalPlayer() = {local_player:#x} (readable: {})",
+            crate::crash::readable(local_player, 4)
+        ))
+    };
+    if !crate::crash::readable(local_player, 4) {
+        return Err(format!(
+            "the engine's local player is {local_player:#x}, which cannot be read --              client.dll would dereference it without checking and take the game down.              Try again while a demo is actually playing"
+        ));
+    }
     // Straight to client.dll's own handler, deliberately bypassing our hook:
     // a message you asked for by hand should not then be filtered by the block
     // list, and the engine is not involved in dispatching it either way.
