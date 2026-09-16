@@ -32,7 +32,8 @@
 use native::patch::scanner::scan_demo_for_highlights;
 use native::patch::types::PatcherConfig;
 use native::patch::{
-    build_batch_queue, clean_demo_decals, on_screen_half_angle, DecalCleanOptions, FlushSource,
+    build_batch_queue, clean_demo_decals, on_screen_half_angle, Cancel, DecalCleanOptions,
+    FlushSource,
     VisibilityBasis,
 };
 
@@ -135,7 +136,7 @@ fn main() {
         ..Default::default()
     };
 
-    match clean_demo_decals(&bytes, &windows, &opts) {
+    match clean_demo_decals(&bytes, &windows, &opts, Cancel::never()) {
         Ok((_out, s)) => {
             let source = match s.flush_source {
                 Some(FlushSource::TiledPlane) => "tiled",

@@ -20,6 +20,33 @@ impl Demo {
     }
 
     pub fn write_to_bytes(&self) -> Vec<u8> {
+        // The check never fires, so `None` is unreachable here.
+        match self.write_to_bytes_cancellable(&|| false) {
+            Some(bytes) => bytes,
+            None => unreachable!("a never-cancelling check reported cancellation"),
+        }
+    }
+
+    /// `write_to_bytes`, abandonable partway through.
+    ///
+    /// Serialising a full-length GoldSrc demo is the single most expensive step
+    /// in dod-tools' decal-flush pass — about 3 seconds for a 110MB, 730k-frame
+    /// demo, roughly 70% of the whole pass — and it used to be one
+    /// uninterruptible call. A user cancelling a capture batch had to wait it
+    /// out, once per job still in flight. See dod-tools#193.
+    ///
+    /// `should_cancel` is polled once every `CANCEL_CHECK_FRAMES` frames rather
+    /// than per frame, which keeps an atomic load off a loop that runs
+    /// hundreds of thousands of times while still bounding the wait to a few
+    /// milliseconds of writing. Returns `None` if it gave up; the partial
+    /// buffer is dropped rather than returned, so a cancelled write can never
+    /// be mistaken for a complete demo.
+    pub fn write_to_bytes_cancellable(&self, should_cancel: &dyn Fn() -> bool) -> Option<Vec<u8>> {
+        /// Frames between cancellation polls. At roughly 4µs a frame this is a
+        /// check every ~15ms of writing.
+        const CANCEL_CHECK_FRAMES: usize = 4096;
+        let mut frames_since_check = 0usize;
+
         let mut writer = ByteWriter::new();
 
         // Magic has 8 bytes in total
@@ -45,6 +72,14 @@ impl Demo {
             let entry_offset_start = writer.get_offset();
 
             for frame in &entry.frames {
+                frames_since_check += 1;
+                if frames_since_check >= CANCEL_CHECK_FRAMES {
+                    frames_since_check = 0;
+                    if should_cancel() {
+                        return None;
+                    }
+                }
+
                 match frame.frame_data {
                     FrameData::DemoStart => writer.append_u8(2u8),
                     FrameData::ConsoleCommand(_) => writer.append_u8(3u8),
@@ -281,6 +316,87 @@ impl Demo {
             (directory_offset as u32).to_le_bytes(),
         );
 
-        writer.data
+        Some(writer.data)
+    }
+}
+
+#[cfg(test)]
+mod cancellable_write_tests {
+    use crate::types::{
+        ByteString, Demo, Directory, DirectoryEntry, Frame, FrameData, Header,
+    };
+
+    /// Enough frames to cross `CANCEL_CHECK_FRAMES` several times over, so a
+    /// check that only ran per entry (there is one) would not be enough.
+    const FRAMES: usize = 20_000;
+
+    fn demo() -> Demo {
+        let frames: Vec<Frame> = (0..FRAMES)
+            .map(|i| Frame {
+                time: i as f32,
+                frame: i as i32,
+                frame_data: FrameData::DemoStart,
+            })
+            .collect();
+
+        Demo {
+            header: Header {
+                magic: b"HLDEMO  ".to_vec(),
+                demo_protocol: 5,
+                network_protocol: 48,
+                map_name: ByteString::from("dod_anzio"),
+                game_directory: ByteString::from("dod"),
+                map_checksum: 0,
+                directory_offset: 0,
+            },
+            directory: Directory {
+                entries: vec![DirectoryEntry {
+                    type_: 1,
+                    description: ByteString::from("Playback"),
+                    flags: 0,
+                    cd_track: -1,
+                    track_time: 0.0,
+                    frame_count: FRAMES as i32,
+                    frame_offset: 0,
+                    file_length: 0,
+                    frames,
+                }],
+            },
+            _aux: None,
+        }
+    }
+
+    #[test]
+    fn a_check_that_never_fires_writes_the_whole_demo() {
+        let demo = demo();
+        let cancellable = demo.write_to_bytes_cancellable(&|| false).expect("not cancelled");
+        assert_eq!(cancellable, demo.write_to_bytes(), "must match the plain writer byte for byte");
+    }
+
+    #[test]
+    fn a_check_that_fires_abandons_the_write() {
+        let demo = demo();
+        assert!(
+            demo.write_to_bytes_cancellable(&|| true).is_none(),
+            "a cancelled write must yield nothing, never a truncated demo"
+        );
+    }
+
+    /// The point of polling inside the frame loop rather than between entries:
+    /// a real demo puts essentially all of its frames in one entry, so an
+    /// entry-granular check would never fire mid-write.
+    #[test]
+    fn cancellation_is_noticed_partway_through_a_single_entry() {
+        let demo = demo();
+        let seen = std::cell::Cell::new(0usize);
+        let result = demo.write_to_bytes_cancellable(&|| {
+            seen.set(seen.get() + 1);
+            seen.get() > 1
+        });
+        assert!(result.is_none());
+        assert!(
+            seen.get() > 1,
+            "the check should have been polled more than once inside the one entry"
+        );
     }
 }
