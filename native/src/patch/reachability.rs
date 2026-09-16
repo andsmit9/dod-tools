@@ -168,7 +168,7 @@ pub fn harvest_directory(dir: &Path, want_checksum: u32, want_map_name: &str) ->
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("dem") {
+        if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("dem")) {
             continue;
         }
         let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
