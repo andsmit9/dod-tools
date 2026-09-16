@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::utf16::read_to_string_lossy_utf16_or_utf8;
+
 static ACTIVE_LANGUAGE: RwLock<&'static str> = RwLock::new("english");
 static LOCALIZATIONS: RwLock<Option<HashMap<String, String>>> = RwLock::new(None);
 #[cfg(not(target_arch = "wasm32"))]
@@ -251,50 +254,6 @@ fn load_pass(map: &mut HashMap<String, String>, filter_lang: &str, amxx_code: &s
                 .unwrap_or(false)
         {
             scan_dir_recursive(&base_path, map, filter_lang, amxx_code);
-        }
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn read_to_string_lossy_utf16_or_utf8(path: &std::path::Path) -> std::io::Result<String> {
-    let bytes = std::fs::read(path)?;
-    if bytes.len() >= 2 {
-        if bytes[0] == 0xFF && bytes[1] == 0xFE {
-            // UTF-16 LE
-            let u16_chars: Vec<u16> = bytes[2..]
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|chunk| u16::from_le_bytes(*chunk))
-                .collect();
-            return Ok(String::from_utf16_lossy(&u16_chars));
-        } else if bytes[0] == 0xFE && bytes[1] == 0xFF {
-            // UTF-16 BE
-            let u16_chars: Vec<u16> = bytes[2..]
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|chunk| u16::from_be_bytes(*chunk))
-                .collect();
-            return Ok(String::from_utf16_lossy(&u16_chars));
-        }
-    }
-
-    match String::from_utf8(bytes.clone()) {
-        Ok(s) => Ok(s),
-        Err(_) => {
-            let has_nulls = bytes.iter().enumerate().any(|(i, &b)| b == 0 && i % 2 == 1);
-            if has_nulls && bytes.len() % 2 == 0 {
-                let u16_chars: Vec<u16> = bytes
-                    .as_chunks::<2>()
-                    .0
-                    .iter()
-                    .map(|chunk| u16::from_le_bytes(*chunk))
-                    .collect();
-                Ok(String::from_utf16_lossy(&u16_chars))
-            } else {
-                Ok(String::from_utf8_lossy(&bytes).into_owned())
-            }
         }
     }
 }
