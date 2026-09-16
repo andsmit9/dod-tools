@@ -620,9 +620,10 @@ static PREVIOUS_DEPLOY_STATE: AtomicI32 = AtomicI32::new(-1); // -1 none, 0 up, 
 /// `stand_rifle_aim`, which nothing happening only in the viewmodel could
 /// cause. A POV recording of the same behaviour would start a draw each time
 /// and cut each one short, so that is what to reproduce.
-static PENDING_VIEWMODEL: AtomicPtr<ModelSPartial> = AtomicPtr::new(std::ptr::null_mut());
-static PENDING_VIEWMODEL_SINCE: AtomicU64 = AtomicU64::new(0);
 static SETTLED_VIEWMODEL: AtomicPtr<ModelSPartial> = AtomicPtr::new(std::ptr::null_mut());
+/// When the last draw was triggered, so a weapon that changes and changes back
+/// immediately does not produce a second one.
+static LAST_DRAW_TRIGGERED: AtomicU64 = AtomicU64::new(0);
 
 /// How long a viewmodel has to hold still before it counts as the weapon in
 /// hand.
@@ -646,21 +647,59 @@ static SETTLED_VIEWMODEL: AtomicPtr<ModelSPartial> = AtomicPtr::new(std::ptr::nu
 /// neither weapon was held long enough to settle.
 const VIEWMODEL_SETTLE_SECONDS: f64 = 0.05;
 
-/// Whether the viewmodel has settled on a weapon that is not the one it had
-/// settled on before -- i.e. whether a real weapon switch just completed.
-fn viewmodel_settled_on_a_new_weapon(current: *mut ModelSPartial, now: f64) -> bool {
-    if PENDING_VIEWMODEL.swap(current, Ordering::Relaxed) != current {
-        // Still flapping (or genuinely just changed): restart the clock.
-        PENDING_VIEWMODEL_SINCE.store(now.to_bits(), Ordering::Relaxed);
-        return false;
-    }
-    let since = f64::from_bits(PENDING_VIEWMODEL_SINCE.load(Ordering::Relaxed));
-    if now >= since && now - since < VIEWMODEL_SETTLE_SECONDS {
-        return false;
-    }
-    // Settled. Report it once, on the transition.
+/// Whether the viewmodel just changed to a different weapon.
+///
+/// Fires on the **leading** edge -- the first frame the weapon differs -- not
+/// after the window has elapsed. That distinction is the whole point: waiting
+/// for the viewmodel to hold still meant every draw played
+/// `VIEWMODEL_SETTLE_SECONDS` late, which is exactly what a live session
+/// showed. Measured over one HLTV demo, 84 of 84 draws landed 0.054-0.055s
+/// after the weapon changed, with no variance at all -- the window itself,
+/// plus a frame. It read in-game as switching a gun and seeing no draw, then
+/// the animation starting a moment later.
+///
+/// The window still does its original job, just from the other side: once a
+/// draw is triggered, another cannot be for that long, so a weapon that
+/// changes and changes straight back is coalesced into the one draw rather
+/// than two. What it can no longer do is suppress a switch entirely -- a
+/// leading-edge trigger has no lookahead, so a flap is one draw, not none.
+/// That is the right trade for this: a spurious draw is a frame of the wrong
+/// animation, whereas a missing one is the bug being fixed.
+fn viewmodel_changed_to_a_new_weapon(current: *mut ModelSPartial, now: f64) -> bool {
     let previous = SETTLED_VIEWMODEL.swap(current, Ordering::Relaxed);
-    !previous.is_null() && previous != current
+    if previous == current {
+        return false;
+    }
+    // Nothing to draw *from* on the first weapon ever seen -- that is the
+    // spectator arriving, not a switch.
+    if previous.is_null() {
+        return false;
+    }
+    let last = f64::from_bits(LAST_DRAW_TRIGGERED.load(Ordering::Relaxed));
+    if now >= last && now - last < VIEWMODEL_SETTLE_SECONDS {
+        // Inside the window of a draw already playing: adopt the new weapon
+        // silently rather than restarting the animation.
+        return false;
+    }
+    LAST_DRAW_TRIGGERED.store(now.to_bits(), Ordering::Relaxed);
+    true
+}
+
+/// Take the current viewmodel as the one in hand without treating it as a
+/// switch the player made.
+///
+/// Used when the *spectator* moves to another player. The weapon in view
+/// changes because the camera did, not because anybody drew anything, so a
+/// draw animation there is simply wrong -- and it is not a rare edge: of the
+/// draws in one measured session, 61 followed a spectated-player change rather
+/// than a weapon change.
+///
+/// `apply()` already plays an idle on that frame, but that alone did not stop
+/// it: the old settle timer kept running underneath and reported the new
+/// weapon as a switch a frame or two later, after the branch that would have
+/// suppressed it had been and gone.
+fn adopt_viewmodel_without_drawing(current: *mut ModelSPartial) {
+    SETTLED_VIEWMODEL.store(current, Ordering::Relaxed);
 }
 
 fn deploy_state_to_i32(state: Option<DeployState>) -> i32 {
@@ -988,12 +1027,14 @@ pub fn apply() {
     let previous_state = i32_to_deploy_state(PREVIOUS_DEPLOY_STATE.load(Ordering::Relaxed));
     let deploy_state_changed = previous_state.is_some() && state.is_some() && previous_state != state;
 
-    let viewmodel_changed = viewmodel_settled_on_a_new_weapon(viewmodel_model, engine::client_time());
+    let viewmodel_changed = viewmodel_changed_to_a_new_weapon(viewmodel_model, engine::client_time());
 
     if switched_players {
         // Snap the new viewmodel straight to the right family's idle so it
         // doesn't sit on whatever sequence the previously-spectated player
-        // left it on.
+        // left it on -- and adopt it as the weapon in hand, so the change of
+        // camera is not mistaken for the new player drawing it.
+        adopt_viewmodel_without_drawing(viewmodel_model);
         play_viewmodel_animation(animation_lookup_sequence("idle", state, viewmodel_model), "spectated player changed", state, viewmodel_model);
     } else if deploy_state_changed {
         // TODO(R&D, unverified live): play the "uptodown"/"downtoup"-style
@@ -1192,16 +1233,17 @@ mod tests {
         reset_settle_state();
         LAST_FIRE_PLAYED.store(0f64.to_bits(), Ordering::Relaxed);
 
-        assert!(!viewmodel_settled_on_a_new_weapon(a, 0.0));
-        assert!(!viewmodel_settled_on_a_new_weapon(a, 1.0));
+        assert!(!viewmodel_changed_to_a_new_weapon(a, 0.0));
+        assert!(!viewmodel_changed_to_a_new_weapon(a, 1.0));
         assert!(claim_fire(1.0));
 
         // Fast-forward: the clock leaps, and the weapon is different when it
-        // lands. The switch is still reported, once, as soon as it settles.
+        // lands. The switch is reported once, on the frame it lands -- a jump
+        // must not swallow it, and must not make it repeat either.
         let after = 500.0;
-        assert!(!viewmodel_settled_on_a_new_weapon(b, after));
-        assert!(viewmodel_settled_on_a_new_weapon(b, after + 1.0));
-        assert!(!viewmodel_settled_on_a_new_weapon(b, after + 2.0));
+        assert!(viewmodel_changed_to_a_new_weapon(b, after));
+        assert!(!viewmodel_changed_to_a_new_weapon(b, after + 1.0));
+        assert!(!viewmodel_changed_to_a_new_weapon(b, after + 2.0));
 
         // And normal-speed firing resumes immediately, at the real cyclic rate
         // rather than being held off by the stale timestamp.
@@ -1226,8 +1268,8 @@ mod tests {
         let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
         reset_settle_state();
 
-        assert!(!viewmodel_settled_on_a_new_weapon(a, 0.0));
-        assert!(!viewmodel_settled_on_a_new_weapon(a, 1.0), "nothing to differ from yet");
+        assert!(!viewmodel_changed_to_a_new_weapon(a, 0.0));
+        assert!(!viewmodel_changed_to_a_new_weapon(a, 1.0), "nothing to differ from yet");
 
         // A kar -> pistol -> kar flick, the case reported from live testing.
         // Each leg is held ~0.2s, far under the old 0.4s window that swallowed
@@ -1235,7 +1277,7 @@ mod tests {
         let mut draws = 0;
         for (i, t) in [1.20, 1.25, 1.40, 1.45, 1.60, 1.65].iter().enumerate() {
             let model = if (i / 2) % 2 == 0 { b } else { a };
-            if viewmodel_settled_on_a_new_weapon(model, *t) {
+            if viewmodel_changed_to_a_new_weapon(model, *t) {
                 draws += 1;
             }
         }
@@ -1245,45 +1287,70 @@ mod tests {
     /// The window still exists to absorb a viewmodel that changes and changes
     /// back within a frame or two, which should read as no switch at all.
     #[test]
-    fn a_single_frame_blip_is_absorbed() {
+    fn a_single_frame_blip_draws_once_and_not_twice() {
         let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
         reset_settle_state();
-        assert!(!viewmodel_settled_on_a_new_weapon(a, 0.0));
-        assert!(!viewmodel_settled_on_a_new_weapon(a, 1.0));
+        assert!(!viewmodel_changed_to_a_new_weapon(a, 0.0), "the first weapon seen is not a switch");
+        assert!(!viewmodel_changed_to_a_new_weapon(a, 1.0));
 
-        // b appears for one frame, then a is back. Neither settles.
-        assert!(!viewmodel_settled_on_a_new_weapon(b, 1.016));
-        assert!(!viewmodel_settled_on_a_new_weapon(a, 1.032));
+        // b appears for one frame, then a is back.
+        //
+        // This used to assert *neither* reported. That was only possible
+        // because the old check waited out the window before deciding, which
+        // is the delay this trigger exists to remove -- a leading edge has no
+        // lookahead, so the frame b appears is indistinguishable from the
+        // start of a real switch. One draw is the honest answer.
+        assert!(viewmodel_changed_to_a_new_weapon(b, 1.016), "b is a different weapon");
+        // ... but the flap back must not restart it a second time.
+        assert!(!viewmodel_changed_to_a_new_weapon(a, 1.032), "flap back inside the window");
     }
 
     #[test]
-    fn a_weapon_that_holds_still_reports_once() {
+    fn a_weapon_switch_draws_on_the_very_first_frame() {
         let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
         reset_settle_state();
 
-        assert!(!viewmodel_settled_on_a_new_weapon(a, 0.0));
-        assert!(!viewmodel_settled_on_a_new_weapon(a, 0.5));
+        assert!(!viewmodel_changed_to_a_new_weapon(a, 0.0));
+        assert!(!viewmodel_changed_to_a_new_weapon(a, 0.5));
 
-        // `b` appears and stays. It is not a switch until it has held still.
-        assert!(!viewmodel_settled_on_a_new_weapon(b, 1.0));
-        assert!(!viewmodel_settled_on_a_new_weapon(b, 1.0 + VIEWMODEL_SETTLE_SECONDS / 2.0));
-        // Comfortably past the threshold rather than exactly on it: the sum
-        // lands a hair under in floating point, and a frame arriving exactly on
-        // the boundary would simply settle on the next one.
-        let settled_at = 1.0 + VIEWMODEL_SETTLE_SECONDS + 0.05;
-        assert!(viewmodel_settled_on_a_new_weapon(b, settled_at));
+        // `b` appears and stays. The draw plays on that frame -- not after the
+        // window, which is what made every draw land ~55ms late in a live
+        // session.
+        assert!(viewmodel_changed_to_a_new_weapon(b, 1.0), "draw is immediate");
 
-        // And only once -- a draw must not restart every frame afterwards.
+        // And only once -- it must not restart every frame afterwards, inside
+        // the window or long past it.
+        assert!(!viewmodel_changed_to_a_new_weapon(b, 1.0 + VIEWMODEL_SETTLE_SECONDS / 2.0));
         for i in 1..10 {
-            let t = settled_at + i as f64 * 0.1;
-            assert!(!viewmodel_settled_on_a_new_weapon(b, t), "re-reported at t={t}");
+            let t = 1.0 + i as f64 * 0.1;
+            assert!(!viewmodel_changed_to_a_new_weapon(b, t), "re-reported at t={t}");
         }
     }
 
+    /// The camera moving to another player is not that player drawing a
+    /// weapon. 61 of one session's draws came from this.
+    #[test]
+    fn a_spectator_change_adopts_the_weapon_without_drawing() {
+        let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
+        reset_settle_state();
+
+        assert!(!viewmodel_changed_to_a_new_weapon(a, 0.0));
+
+        // Camera moves to a player holding a different weapon.
+        adopt_viewmodel_without_drawing(b);
+
+        // No draw for it, now or once the old window would have expired --
+        // which is exactly where the stale timer used to produce one.
+        assert!(!viewmodel_changed_to_a_new_weapon(b, 0.1));
+        assert!(!viewmodel_changed_to_a_new_weapon(b, 0.1 + VIEWMODEL_SETTLE_SECONDS * 2.0));
+
+        // A genuine switch afterwards still draws.
+        assert!(viewmodel_changed_to_a_new_weapon(a, 1.0));
+    }
+
     fn reset_settle_state() {
-        PENDING_VIEWMODEL.store(std::ptr::null_mut(), Ordering::Relaxed);
-        PENDING_VIEWMODEL_SINCE.store(0f64.to_bits(), Ordering::Relaxed);
         SETTLED_VIEWMODEL.store(std::ptr::null_mut(), Ordering::Relaxed);
+        LAST_DRAW_TRIGGERED.store(0f64.to_bits(), Ordering::Relaxed);
     }
 
     #[test]
