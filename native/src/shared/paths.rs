@@ -70,6 +70,101 @@ pub fn remove_console_log(game_root: &Path) {
     let _ = std::fs::remove_file(game_root.join("qconsole.log"));
 }
 
+/// Every scratch file a capture batch leaves in the game folder, cleared
+/// according to the four auto-clear settings.
+///
+/// `game_root` is the folder holding `hl.exe`; the batch writes into it and
+/// into its `dod/` subfolder. Nothing here is fatal — a capture that finished
+/// should not fail because a leftover could not be deleted — so most removals
+/// are best-effort, with two deliberate exceptions noted inline.
+///
+/// This is one function because it used to be two verbatim copies, in
+/// `CaptureCleanupGuard::drop` (capture_engine.rs) and `WorkspaceGuard::drop`
+/// (patch/builder.rs). Both guards run for the same batch and clear the same
+/// files; adding a scratch file to one and forgetting the other left it in the
+/// user's game folder with no error and no log line. Add new scratch filenames
+/// here and both paths get them.
+///
+/// Gated like the helpers it calls: this is all `std::fs`, and per CLAUDE.md's
+/// WASM guardrail direct file I/O stays off the wasm32 build.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn clear_capture_scratch(
+    game_root: &Path,
+    auto_clear_logs: bool,
+    auto_clear_temp_demos: bool,
+    auto_clear_previews: bool,
+    save_local_patched_copy: bool,
+) {
+    let dod_dir = game_root.join("dod");
+
+    if auto_clear_logs {
+        remove_console_log(game_root);
+        let _ = std::fs::remove_file(dod_dir.join("dodtools_helper.cfg"));
+        let _ = std::fs::remove_file(dod_dir.join("dodtools_capture_done.cfg"));
+        let _ = std::fs::remove_file(dod_dir.join("dod_quit.cfg"));
+        if let Ok(entries) = std::fs::read_dir(&dod_dir) {
+            for entry in entries.flatten() {
+                let filename = entry.file_name().to_string_lossy().to_string();
+                if filename.starts_with("dodtools_chain_") && filename.ends_with(".cfg") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
+
+    if auto_clear_temp_demos && !save_local_patched_copy {
+        // Retried, and logged loudly on final failure -- unlike the best-effort
+        // removals above, the last demo in a batch can still have hl.exe's file
+        // handle attached here (see #198's investigation), and a leftover chain
+        // file after auto-clear went completely unnoticed the first time this
+        // happened.
+        if let Some(e) = remove_file_retrying(&dod_dir.join("primer.dem")) {
+            crate::log_markdown(&format!(
+                "⚠️ **Cleanup** — could not remove primer.dem after retrying: {e} (auto_clear_temp_demos left it behind; hl.exe may still have had it open)"
+            ));
+        }
+        if let Ok(entries) = std::fs::read_dir(&dod_dir) {
+            for entry in entries.flatten() {
+                let filename = entry.file_name().to_string_lossy().to_string();
+                if is_chain_demo_filename(&filename)
+                    && let Some(e) = remove_file_retrying(&entry.path()) {
+                        crate::log_markdown(&format!(
+                            "⚠️ **Cleanup** — could not remove {filename} after retrying: {e} (auto_clear_temp_demos left it behind; hl.exe may still have had it open)"
+                        ));
+                    }
+            }
+        }
+    }
+
+    if auto_clear_previews {
+        // Only a `_preview.dem` with its hidden `.dodtools_preview` sidecar is
+        // ours. A demo the user named that way themselves has no sidecar and is
+        // left alone.
+        for scan_dir in [dod_dir.clone(), game_root.to_path_buf()] {
+            let Ok(entries) = std::fs::read_dir(scan_dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let Some(filename) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                if !filename.ends_with("_preview.dem") {
+                    continue;
+                }
+                let sidecar = path.with_extension("dodtools_preview");
+                if sidecar.exists() {
+                    let _ = std::fs::remove_file(&path);
+                    let _ = std::fs::remove_file(sidecar);
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

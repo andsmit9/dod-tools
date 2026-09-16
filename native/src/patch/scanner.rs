@@ -116,7 +116,7 @@ pub fn scan_demo_for_highlights_with_analysis(
     };
     
     // Fallback if the demo header has garbage values
-    if !tickrate.is_normal() || tickrate < 10.0 || tickrate > 1000.0 {
+    if !tickrate.is_normal() || !(10.0..=1000.0).contains(&tickrate) {
         tickrate = 100.0;
     }
 

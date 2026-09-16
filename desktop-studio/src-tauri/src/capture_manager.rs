@@ -24,6 +24,32 @@ use std::sync::{Arc, Mutex};
 /// real parallelism here.
 const PATCH_CONCURRENCY: usize = 4;
 
+/// Same shape as `PATCH_CONCURRENCY`, for `scan_directory_impl`'s Phase 2 --
+/// each file's parse is independent (no shared mutable state between demos;
+/// `native::warm_analyzer_cache` writes to a per-demo-path cache file, not a
+/// single shared one, so concurrent writes for different demos don't
+/// collide), so it is bounded with a fixed worker pool the same way. See #195.
+///
+/// Two, not four, and deliberately lower than `PATCH_CONCURRENCY`: a parse
+/// holds a whole `Analysis` in memory, which measures roughly 14x the demo's
+/// own size, so concurrency here multiplies something already large. Measured
+/// over a 45-demo corpus (3.2GB, 72MB mean, 105MB largest) with
+/// `native/examples/scan_mem_probe.rs`:
+///
+/// | workers | wall time | peak working set |
+/// | ------- | --------- | ---------------- |
+/// | 1       | 56.2s     | 1529 MB          |
+/// | 2       | 40.8s     | 2414 MB          |
+/// | 4       | 36.0s     | 4574 MB          |
+/// | 8       | 49.7s     | 9157 MB          |
+///
+/// Four buys 1.56x the speed for 3x the memory; two gets 1.38x for 1.6x.
+/// Eight is slower *and* uses 9GB, which is what says the ceiling here is
+/// memory pressure rather than CPU. This is a desktop app that may be running
+/// alongside the game, so the last 4.8 seconds is not worth 2.2GB. Patching
+/// stays at 4 because it streams frames rather than holding a full analysis.
+const SCAN_CONCURRENCY: usize = 2;
+
 use native::patch::{PatcherConfig, CaptureStreak, CaptureBlock, PatchJob, StreamPatcher, build_batch_queue, build_preview_patch_jobs, CustomCommand, CommandRelation};
 use native::capture_engine::{spawn_capture_engine, CaptureJob, EngineEvent};
 use native::log_markdown;
@@ -495,7 +521,6 @@ fn obs_config(host: String, port: u16, password: String) -> native::patch::ObsCo
         host: if host.is_empty() { "127.0.0.1".to_string() } else { host },
         port: if port == 0 { 4455 } else { port },
         password,
-        ..Default::default()
     }
 }
 
@@ -1165,7 +1190,7 @@ pub async fn scan_directory_impl(
                     .binary_search_by(|p: &PathBuf| {
                         p.file_name()
                             .unwrap_or_default()
-                            .cmp(&path_buf.file_name().unwrap_or_default())
+                            .cmp(path_buf.file_name().unwrap_or_default())
                     })
                     .unwrap_or_else(|pos| pos);
                 list.insert(insert_idx, path_buf);
@@ -1185,7 +1210,7 @@ pub async fn scan_directory_impl(
                             .binary_search_by(|p: &PathBuf| {
                                 p.file_name()
                                     .unwrap_or_default()
-                                    .cmp(&path.file_name().unwrap_or_default())
+                                    .cmp(path.file_name().unwrap_or_default())
                             })
                             .unwrap_or_else(|pos| pos);
                         list.insert(insert_idx, path);
@@ -1196,93 +1221,123 @@ pub async fn scan_directory_impl(
 
         let total_files = list.len() as u32;
 
-        // ── Phase 2: parse each .dem file ────────────────────────────────────
-        let mut results = Vec::new();
-        let mut scanned: u32 = 0;
+        // ── Phase 2: parse each .dem file, up to SCAN_CONCURRENCY at once ───
+        // `list` is already sorted by filename (Phase 1's binary-search
+        // insert), so each worker writes its result into a pre-sized slot at
+        // its own original index -- the output comes out in sorted order for
+        // free, with no re-sort needed once concurrent workers finish out of
+        // order.
+        let total = list.len();
+        let slots: Mutex<Vec<Option<SerializedDemo>>> = Mutex::new((0..total).map(|_| None).collect());
+        let next_index = std::sync::atomic::AtomicUsize::new(0);
+        // Completed-count progress rather than positional index -- same
+        // reason the patch loop's `capture_status` event uses one: files
+        // finish out of order once scanned concurrently.
+        let completed = std::sync::atomic::AtomicU32::new(0);
+        let found = std::sync::atomic::AtomicU32::new(0);
 
-        for file in list {
-            // Honour cancellation before each parse (I/O can be slow)
-            if cancel_token.load(std::sync::atomic::Ordering::SeqCst) {
-                let _ = app_handle.emit(
-                    "scan_progress",
-                    serde_json::json!({
-                        "scanned": scanned,
-                        "found": results.len() as u32,
-                        "status": "Cancelled",
-                        "cancelled": true
-                    }),
-                );
-                return Ok(results);
-            }
-
-            scanned += 1;
-            let file_name = file
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string();
-
-            let _ = app_handle.emit(
-                "scan_progress",
-                serde_json::json!({
-                    "scanned": scanned,
-                    "found": results.len() as u32,
-                    "status": format!("Scanning {} / {} — {}", scanned, total_files, file_name),
-                    "cancelled": false
-                }),
-            );
-
-            if let Ok((
-                (
-                    tickrate,
-                    streaks,
-                    is_pov,
-                    local_player_index,
-                    playback_frames,
-                    match_start_tick,
-                    frame_times_arc,
-                ),
-                analysis,
-            )) = scan_demo_for_highlights_with_analysis(&file)
-            {
-                // Pre-warm the analyzer cache with the Analysis this scan already
-                // computed, so opening this demo in the Demo Analyzer afterward
-                // hits the cache path instead of re-parsing. Best-effort/silent.
-                native::warm_analyzer_cache(&file, &analysis);
-
-                let serialized_streaks: Vec<SerializedStreak> = streaks
-                    .into_iter()
-                    .map(|mut s| {
-                        s.match_start_tick = match_start_tick;
-                        s.frame_times = frame_times_arc.clone();
-                        SerializedStreak::from(s)
-                    })
-                    .collect();
-
-                results.push(SerializedDemo {
-                    path: file.to_string_lossy().to_string(),
-                    name: file
+        std::thread::scope(|scope| {
+            let worker_count = SCAN_CONCURRENCY.min(total).max(1);
+            for _ in 0..worker_count {
+                let app_handle = &app_handle;
+                let cancel_token = &cancel_token;
+                let list = &list;
+                let slots = &slots;
+                let next_index = &next_index;
+                let completed = &completed;
+                let found = &found;
+                scope.spawn(move || loop {
+                    // Honour cancellation before starting the next parse
+                    // (I/O can be slow) -- a parse already in flight is not
+                    // interrupted, same blind spot the patch loop's
+                    // decal-flush pass has (#193).
+                    if cancel_token.load(std::sync::atomic::Ordering::SeqCst) {
+                        break;
+                    }
+                    let idx = next_index.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if idx >= total {
+                        break;
+                    }
+                    let file = &list[idx];
+                    let file_name = file
                         .file_name()
                         .unwrap_or_default()
                         .to_string_lossy()
-                        .to_string(),
-                    tickrate,
-                    is_pov,
-                    local_player_index,
-                    playback_frames,
-                    streaks: serialized_streaks,
+                        .to_string();
+
+                    let serialized = scan_demo_for_highlights_with_analysis(file).ok().map(
+                        |(
+                            (
+                                tickrate,
+                                streaks,
+                                is_pov,
+                                local_player_index,
+                                playback_frames,
+                                match_start_tick,
+                                frame_times_arc,
+                            ),
+                            analysis,
+                        )| {
+                            // Pre-warm the analyzer cache with the Analysis
+                            // this scan already computed, so opening this
+                            // demo in the Demo Analyzer afterward hits the
+                            // cache path instead of re-parsing.
+                            // Best-effort/silent, and safe under concurrency:
+                            // keyed per demo path, not one shared cache.
+                            native::warm_analyzer_cache(file, &analysis);
+
+                            let serialized_streaks: Vec<SerializedStreak> = streaks
+                                .into_iter()
+                                .map(|mut s| {
+                                    s.match_start_tick = match_start_tick;
+                                    s.frame_times = frame_times_arc.clone();
+                                    SerializedStreak::from(s)
+                                })
+                                .collect();
+
+                            SerializedDemo {
+                                path: file.to_string_lossy().to_string(),
+                                name: file_name.clone(),
+                                tickrate,
+                                is_pov,
+                                local_player_index,
+                                playback_frames,
+                                streaks: serialized_streaks,
+                            }
+                        },
+                    );
+
+                    if serialized.is_some() {
+                        found.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    }
+                    slots.lock().unwrap_or_else(|p| p.into_inner())[idx] = serialized;
+
+                    let done = completed.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    let _ = app_handle.emit(
+                        "scan_progress",
+                        serde_json::json!({
+                            "scanned": done,
+                            "found": found.load(std::sync::atomic::Ordering::Relaxed),
+                            "status": format!("Scanning {} / {} — {}", done, total_files, file_name),
+                            "cancelled": false
+                        }),
+                    );
                 });
             }
-        }
+        });
 
-        // ── Final progress event (complete) ───────────────────────────────────
+        let results: Vec<SerializedDemo> =
+            slots.into_inner().unwrap_or_else(|p| p.into_inner()).into_iter().flatten().collect();
+        let was_cancelled = cancel_token.load(std::sync::atomic::Ordering::SeqCst);
+
+        // ── Final progress event (complete or cancelled) ────────────────────
         let _ = app_handle.emit(
             "scan_progress",
             serde_json::json!({
-                "scanned": scanned,
+                "scanned": completed.load(std::sync::atomic::Ordering::Relaxed),
                 "found": results.len() as u32,
-                "status": "Complete",
-                "cancelled": false
+                "status": if was_cancelled { "Cancelled" } else { "Complete" },
+                "cancelled": was_cancelled
             }),
         );
 
@@ -1292,16 +1347,6 @@ pub async fn scan_directory_impl(
 
     is_scanning_end.store(false, std::sync::atomic::Ordering::SeqCst);
     result
-}
-
-pub fn simulate_aot_capacity(streaks: Vec<f32>, fps: u32, bytes_per_frame: u64, available_bytes: u64) -> (u64, bool) {
-    let mut total_projected_bytes: u64 = 0;
-    for duration in streaks {
-        let frames = (duration * fps as f32).ceil() as u64;
-        total_projected_bytes += frames * bytes_per_frame;
-    }
-    let has_enough_space = total_projected_bytes <= available_bytes;
-    (total_projected_bytes, has_enough_space)
 }
 
 // ── Bookmark Previews (.dodtools_preview) ─────────────────────────────────────
@@ -1640,6 +1685,7 @@ fn is_engine_process_name(name: &str) -> bool {
 /// deterministic answer instead of asking the user to interpret a raw OS
 /// socket error themselves.
 fn is_obs_process_running() -> bool {
+    use sysinfo::{ProcessExt, SystemExt};
     let sys = sysinfo::System::new_all();
     sys.processes().values().any(|p| {
         let lower = p.name().to_lowercase();
@@ -1650,6 +1696,7 @@ fn is_obs_process_running() -> bool {
 /// True if any `hl.exe` or `hlae.exe` process is currently running.
 #[tauri::command]
 pub fn check_engine_processes() -> bool {
+    use sysinfo::{ProcessExt, SystemExt};
     let sys = sysinfo::System::new_all();
     sys.processes()
         .values()
@@ -1659,13 +1706,13 @@ pub fn check_engine_processes() -> bool {
 /// Aggressively terminates every running `hl.exe`/`hlae.exe` instance.
 #[tauri::command]
 pub fn kill_engine_processes() -> Result<(), String> {
+    use sysinfo::{ProcessExt, SystemExt};
     let sys = sysinfo::System::new_all();
     for process in sys.processes().values() {
-        if is_engine_process_name(process.name()) {
-            if !process.kill() {
+        if is_engine_process_name(process.name())
+            && !process.kill() {
                 log::warn!("Failed to kill engine process pid={}", process.pid());
             }
-        }
     }
     Ok(())
 }

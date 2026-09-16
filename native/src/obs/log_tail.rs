@@ -350,7 +350,7 @@ mod tests {
         f.flush().unwrap();
         assert!(t.poll().is_empty(), "half a line is not a marker yet");
 
-        write!(f, "CORD - Tick 99\n").unwrap();
+        writeln!(f, "CORD - Tick 99").unwrap();
         f.flush().unwrap();
         let got = t.poll();
         assert_eq!(got.len(), 1);

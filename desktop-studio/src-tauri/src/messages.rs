@@ -187,12 +187,21 @@ pub fn failed_to_open_explorer(err: impl Display) -> String {
     format!("Failed to open explorer: {}", err)
 }
 
+// These three are the macOS and Linux arms of `audit_manager::reveal_in_explorer`
+// (its `#[cfg(target_os = "macos")]` and `#[cfg(not(any(windows, macos)))]`
+// blocks). They are genuinely reachable there, but every build this repo
+// actually produces is Windows, so rustc compiles their only call sites out and
+// reports them as dead. Allowed rather than gated, so the tests below keep
+// covering the wording on every platform.
+#[allow(dead_code)]
 pub fn failed_to_open_finder(err: impl Display) -> String {
     format!("Failed to open Finder: {}", err)
 }
 
+#[allow(dead_code)]
 pub const NO_PARENT_DIRECTORY_FOR_PATH: &str = "No parent directory for path";
 
+#[allow(dead_code)]
 pub fn failed_to_open_folder(err: impl Display) -> String {
     format!("Failed to open folder: {}", err)
 }

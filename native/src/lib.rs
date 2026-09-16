@@ -164,15 +164,12 @@ where
 
     let cache_path = analyzer_cache_path(demo_path);
 
-    if let Some(cache_path) = &cache_path {
-        if let Ok(bytes) = fs::read(cache_path) {
-            if let Ok(entry) = serde_json::from_slice::<AnalyzerCacheEntry>(&bytes) {
-                if entry.size_bytes == size_bytes && entry.modified_unix_secs == modified_unix_secs {
+    if let Some(cache_path) = &cache_path
+        && let Ok(bytes) = fs::read(cache_path)
+            && let Ok(entry) = serde_json::from_slice::<AnalyzerCacheEntry>(&bytes)
+                && entry.size_bytes == size_bytes && entry.modified_unix_secs == modified_unix_secs {
                     return Ok((entry.file_info, entry.analysis, true));
                 }
-            }
-        }
-    }
 
     let (file_info, analysis) = run_analyzer_with_progress(demo_path, progress_cb)?;
 

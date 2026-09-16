@@ -137,7 +137,7 @@ export function isRangeModified(streak) {
  * it is exactly the kind of on-purpose signal this predicate exists to
  * protect, and the 2026-08-19 restriction no longer applies.
  */
-export function isHighlightTracked(streak) {
+function isHighlightTracked(streak) {
   if (!streak) return false;
   if (streak.status === 'Pending' || streak.status === 'Captured' || streak.status === 'Rendered') return true;
   if (streak.notes && streak.notes.trim()) return true;

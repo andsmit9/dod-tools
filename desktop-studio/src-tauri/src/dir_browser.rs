@@ -162,8 +162,8 @@ pub fn browse_directory(path: Option<String>) -> Result<DirListing, String> {
         }
     }
 
-    subdirs.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    demos.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    subdirs.sort_by_key(|a| a.name.to_lowercase());
+    demos.sort_by_key(|a| a.name.to_lowercase());
 
     // Drive roots (e.g. "C:\") have no useful parent; going "up" from one
     // should return to the drive-list root instead of erroring on `.parent()`.
@@ -247,8 +247,8 @@ pub async fn scan_demo_folders(root: Option<String>) -> Result<Vec<DemoFolderHit
                 for entry in entries.filter_map(Result::ok) {
                     let path = entry.path();
                     if path.is_dir() {
-                        if walk_recursive && depth < max_depth {
-                            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if walk_recursive && depth < max_depth
+                            && let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                                 let name_lower = name.to_lowercase();
                                 if !name.starts_with('.')
                                     && !name.starts_with('$')
@@ -257,7 +257,6 @@ pub async fn scan_demo_folders(root: Option<String>) -> Result<Vec<DemoFolderHit
                                     subdirs.push(path);
                                 }
                             }
-                        }
                     } else if is_dem_file(&path) {
                         demo_count += 1;
                     }

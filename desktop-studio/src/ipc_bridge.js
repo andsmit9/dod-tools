@@ -55,14 +55,6 @@ export async function downloadMap(mapName, expectedChecksum, gamePath) {
     });
 }
 
-export async function mapDownloadUrl(mapName) {
-  return invoke("map_download_url", { mapName })
-    .catch((err) => {
-      console.error("IPC Execution Error (map_download_url):", err);
-      return null;
-    });
-}
-
 
 // What the pre-roll and post-roll have to cover. Quiet on failure: a timing
 // hint that cannot be computed is not worth interrupting anyone over.
@@ -264,14 +256,6 @@ export async function cancelCaptureBatch() {
     });
 }
 
-export async function getCaptureStatus() {
-  return invoke("capture_status")
-    .catch((err) => {
-      console.error("IPC Execution Error (capture_status):", err);
-      throw err;
-    });
-}
-
 export async function calculateExportPoolSpace(paths) {
   return invoke("calculate_export_pool_space", { paths: paths })
     .catch((err) => {
@@ -292,18 +276,6 @@ export async function diagnoseCaptureOutputPaths(paths) {
     });
 }
 
-export async function simulateAotCapacity(streaks, fps, bytesPerFrame, availableBytes) {
-  return invoke("simulate_aot_capacity", { 
-    streaks, 
-    fps, 
-    bytesPerFrame, 
-    availableBytes 
-  }).catch((err) => {
-    console.error("IPC Execution Error (simulate_aot_capacity):", err);
-    showToast(STRINGS.IPC.simulationError(err), 'error');
-    throw err;
-  });
-}
 
 export async function queueRenderBatch(payload) {
   // payload must match RenderBatchPayload:

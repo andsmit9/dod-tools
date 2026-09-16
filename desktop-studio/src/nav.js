@@ -50,10 +50,6 @@ export function setCaptureDetailSubtab(subtab) {
   applyCaptureDetailSubtabDisplay();
 }
 
-export function getCaptureDetailSubtab() {
-  return activeCaptureDetailSubtab;
-}
-
 export function switchNavTab(navKey) {
   const workspacePane = document.querySelector('#pane-workspace');
   const detailsPane = document.querySelector('#pane-details-config');

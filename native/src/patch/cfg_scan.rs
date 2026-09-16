@@ -81,9 +81,7 @@ impl CfgScan {
     /// configs it actually executes. Last one wins, as the console does.
     pub fn effective(&self, cvar: &str) -> Option<&CvarSetting> {
         self.settings
-            .iter()
-            .filter(|s| s.auto_executed && s.cvar.eq_ignore_ascii_case(cvar))
-            .next_back()
+            .iter().rfind(|s| s.auto_executed && s.cvar.eq_ignore_ascii_case(cvar))
     }
 
     /// Every watched cvar that an executed config sets.
@@ -224,11 +222,17 @@ pub const MID_DEMO_HAZARDS: &[&str] = &[
     "host_framerate",
 ];
 
-/// Commands the pipeline owns outright — no dedicated setting exists for any
-/// of them, and no scenario has been found where a user typing one is
-/// anything but a misunderstanding. Refused wherever a command can be typed
-/// (Initial Commands and Scheduled Commands alike), not merely shadowed or
-/// flagged as a mid-demo hazard the way the rest of `MID_DEMO_HAZARDS` is.
+/// Commands refused wherever a command can be typed (Initial Commands and
+/// Scheduled Commands alike), not merely shadowed or flagged as a mid-demo
+/// hazard the way the rest of `MID_DEMO_HAZARDS` is. Two different reasons
+/// land a command here:
+///
+///   * **the pipeline owns it outright** — no dedicated setting exists, and no
+///     scenario has been found where a user typing one is anything but a
+///     misunderstanding (`mirv_recordmovie_start`/`_stop`, `mirv_movie_ffmpeg`,
+///     `host_framerate`);
+///   * **DoD's own client has no legitimate non-default value for it at
+///     all** — `r_drawentities`, `cl_lw`.
 ///
 /// Distinct from `mirv_movie_fps`, which the pipeline also always pins but
 /// which corresponds to a real setting (Output Format → Capture FPS) —
@@ -240,7 +244,8 @@ pub const MID_DEMO_HAZARDS: &[&str] = &[
 /// flagged — see `MID_DEMO_HAZARDS`'s own doc comment for why. Also distinct
 /// from `mirv_movie_filename`, which used to be here too — see
 /// `SCHEDULED_BANNED_COMMANDS` for why it moved. User-confirmed tier list,
-/// 2026-09-02 (`mirv_movie_filename` re-tiered 2026-09-05).
+/// 2026-09-02 (`mirv_movie_filename` re-tiered 2026-09-05, `r_drawentities`/
+/// `cl_lw` added 2026-09-08).
 ///
 /// - `mirv_recordmovie_start` / `mirv_recordmovie_stop` — the pipeline's own
 ///   `sys_record_start`/`sys_record_stop` scheduling relies on being the only
@@ -252,12 +257,121 @@ pub const MID_DEMO_HAZARDS: &[&str] = &[
 ///   legitimate creative use (frame-by-frame stepping, per
 ///   `docs/goldsrc_dod_quirks.md`'s High-Precision Frame Pacing entry) and
 ///   rejected: "It's dangerous and nobody uses that."
+/// - `r_drawentities` / `cl_lw` — DoD 1.3's `client.dll` runs a cvar-enforcement
+///   check inside `CHud::Redraw`: if either is not `1`, it forces the correct
+///   value back, prints an error, and calls `quit` — the process exits
+///   outright rather than merely correcting course. Refused here for both,
+///   because Initial/Scheduled Commands are cheap to restrict and this module
+///   cannot see whether a user's own configs also turned cheats on.
+///
+///   The two are *not* equally reachable, though, and `FATAL_CVARS` draws the
+///   distinction that matters when scanning a user's config files. `cl_lw` is
+///   an ordinary client cvar and simply takes the value it is given.
+///   `r_drawentities` is on GoldSrc's own hardcoded clamp list: while
+///   `sv_cheats` is `0` the engine resets it to `1.0` and the value never
+///   survives long enough for DoD's client to see it. Verified live and in
+///   the binaries — `hw.dll` `0x1d455c9`, gated on `sv_cheats` at `0x1e56404`.
 pub const BANNED_COMMANDS: &[&str] = &[
     "mirv_recordmovie_start",
     "mirv_recordmovie_stop",
     "mirv_movie_ffmpeg",
     "host_framerate",
+    "r_drawentities",
+    "cl_lw",
 ];
+
+/// A cvar DoD's own client quits the game over, plus what it takes for that to
+/// actually be reachable.
+///
+/// A command typed into Initial or Scheduled Commands is refused outright via
+/// `BANNED_COMMANDS` — but a config file the user already has is a different
+/// problem: nothing here writes to it (STRICTLY READ-ONLY, module-level
+/// doc), so the most this can do is detect and warn. See `fatal_cvar_hazards`.
+///
+/// Both cvars are checked inside `CHud::Redraw` (`client.dll` RVA `0x1936e20`),
+/// so the failure is not confined to start-up: a config that only sets one
+/// after the HUD is already drawing is exactly as fatal as setting it before
+/// launch. The check runs when the HUD *draws*, which is also why it does not
+/// fire while the console is open — see `docs/goldsrc_dod_quirks.md`.
+pub struct FatalCvar {
+    pub cvar: &'static str,
+    /// The only value that does not quit the game.
+    pub required: &'static str,
+    /// Whether reaching DoD's client requires cheats to be on.
+    ///
+    /// GoldSrc clamps some renderer cvars itself, on a hardcoded list gated on
+    /// `sv_cheats` (`hw.dll` `0x1d455c9`). While `sv_cheats` is `0` the engine
+    /// resets `r_drawentities` to `1.0` and the value never survives to be
+    /// read, so a config setting it is inert — reporting that as fatal would
+    /// block a capture over a harmless line. `cl_lw` has no such clamp and is
+    /// always fatal.
+    pub needs_sv_cheats: bool,
+}
+
+pub const FATAL_CVARS: &[FatalCvar] = &[
+    FatalCvar { cvar: "r_drawentities", required: "1", needs_sv_cheats: true },
+    FatalCvar { cvar: "cl_lw", required: "1", needs_sv_cheats: false },
+];
+
+/// Whether an executed config turns cheats on, which is what decides if a
+/// `needs_sv_cheats` entry can reach DoD's client at all. Any non-zero numeric
+/// value counts; anything unparseable is treated as off, matching the engine's
+/// own float coercion of a cvar string.
+fn sv_cheats_enabled(scan: &CfgScan) -> bool {
+    scan.effective("sv_cheats")
+        .is_some_and(|s| s.value.trim().parse::<f32>().is_ok_and(|v| v != 0.0))
+}
+
+/// One cvar a config sets to a value DoD's own client will quit the game over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FatalCvarSetting {
+    pub cvar: String,
+    pub value: String,
+    /// The only value that does not crash — always `"1"` today, but named
+    /// rather than hardcoded so a caller's message stays correct if
+    /// `FATAL_CVARS` ever gains an entry with a different one.
+    pub required: String,
+    pub file: PathBuf,
+    pub line: usize,
+}
+
+impl FatalCvarSetting {
+    pub fn file_name(&self) -> String {
+        self.file
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| self.file.to_string_lossy().to_string())
+    }
+}
+
+/// Every `FATAL_CVARS` entry an executed config sets to something other than
+/// its required value.
+///
+/// Uses `CfgScan::effective`, the same last-one-wins resolution as everything
+/// else here — a `movie.cfg` that first sets `r_drawentities 0` and later
+/// corrects it back to `1` is not a hazard, because that is genuinely the
+/// value the engine ends up with.
+pub fn fatal_cvar_hazards(scan: &CfgScan) -> Vec<FatalCvarSetting> {
+    let cheats = sv_cheats_enabled(scan);
+    FATAL_CVARS
+        .iter()
+        .filter_map(|entry| {
+            if entry.needs_sv_cheats && !cheats {
+                // The engine clamps it back before anything downstream reads
+                // it, so the config line is inert rather than fatal.
+                return None;
+            }
+            let setting = scan.effective(entry.cvar)?;
+            (setting.value != entry.required).then(|| FatalCvarSetting {
+                cvar: setting.cvar.clone(),
+                value: setting.value.clone(),
+                required: entry.required.to_string(),
+                file: setting.file.clone(),
+                line: setting.line,
+            })
+        })
+        .collect()
+}
 
 /// Commands from `list` that appear in `commands`, as (matched cvar, whole
 /// trimmed line) pairs, in the order they were found.
@@ -501,11 +615,10 @@ pub fn scan_cached(game_dir: &Path) -> std::sync::Arc<CfgScan> {
     let cache = CACHE.get_or_init(Default::default);
     let key = normalise(game_dir);
 
-    if let Ok(read) = cache.read() {
-        if let Some(hit) = read.get(&key) {
+    if let Ok(read) = cache.read()
+        && let Some(hit) = read.get(&key) {
             return std::sync::Arc::clone(hit);
         }
-    }
 
     let scanned = std::sync::Arc::new(scan(game_dir));
     if let Ok(mut write) = cache.write() {
@@ -868,11 +981,16 @@ mod tests {
         // (the user's own stated value wins). Does NOT
         // include mirv_movie_filename any more — see
         // `scheduled_banned_commands_flags_the_decal_flush_cvars_and_mirv_movie_filename`.
+        // r_drawentities/cl_lw are here for a different reason (no legitimate
+        // non-default value, not "no dedicated setting"), but the ban itself
+        // is identical, so one list-membership test covers both reasons.
         let hits = banned_commands(&[
             "mirv_recordmovie_start".to_string(),
             "mirv_recordmovie_stop".to_string(),
             "mirv_movie_ffmpeg all enabled 1".to_string(),
             "host_framerate 0.05".to_string(),
+            "r_drawentities 0".to_string(),
+            "cl_lw 0".to_string(),
         ]);
 
         let flagged: Vec<&str> = hits.iter().map(|(cvar, _)| cvar.as_str()).collect();
@@ -883,8 +1001,111 @@ mod tests {
                 "mirv_recordmovie_stop",
                 "mirv_movie_ffmpeg",
                 "host_framerate",
+                "r_drawentities",
+                "cl_lw",
             ]
         );
+    }
+
+    #[test]
+    fn fatal_cvar_hazards_flags_only_a_non_default_value() {
+        let dir = scratch("fatal");
+        std::fs::write(
+            dir.join("config.cfg"),
+            "sv_cheats \"1\"\nr_drawentities \"0\"\ncl_lw \"1\"\nsensitivity \"3\"\n",
+        )
+        .unwrap();
+
+        let scan = scan(&dir);
+        let hazards = fatal_cvar_hazards(&scan);
+
+        // cl_lw is explicitly 1 (the required value) and sensitivity is not a
+        // FATAL_CVARS entry at all -- neither should be reported. sv_cheats is
+        // set only so r_drawentities is reachable at all; see
+        // r_drawentities_alone_is_not_fatal_because_the_engine_clamps_it.
+        assert_eq!(hazards.len(), 1, "{hazards:?}");
+        assert_eq!(hazards[0].cvar, "r_drawentities");
+        assert_eq!(hazards[0].value, "0");
+        assert_eq!(hazards[0].required, "1");
+        assert_eq!(hazards[0].file_name(), "config.cfg");
+    }
+
+    #[test]
+    fn fatal_cvar_hazards_resolves_last_value_wins_like_everything_else() {
+        // A config that sets it wrong and then corrects it is not a hazard --
+        // that is genuinely the value the engine ends up running with.
+        let dir = scratch("fatal_corrected");
+        std::fs::write(dir.join("config.cfg"), "r_drawentities \"0\"\nr_drawentities \"1\"\n").unwrap();
+
+        let scan = scan(&dir);
+        assert!(fatal_cvar_hazards(&scan).is_empty());
+    }
+
+    #[test]
+    fn fatal_cvar_hazards_ignores_an_unreferenced_config() {
+        // A movie.cfg sitting in the folder that nothing execs sets nothing --
+        // same rule `CfgScan::effective` already applies to everything else.
+        let dir = scratch("fatal_unreferenced");
+        std::fs::write(dir.join("movie.cfg"), "r_drawentities \"0\"\n").unwrap();
+
+        let scan = scan(&dir);
+        assert!(fatal_cvar_hazards(&scan).is_empty());
+    }
+
+    #[test]
+    fn fatal_cvars_are_in_banned_commands_too() {
+        // The config-file hazard above and the typed-command ban are two
+        // halves of the same fact; letting them drift apart would leave one
+        // route to the crash unblocked while the other still warns about it.
+        for entry in FATAL_CVARS {
+            assert!(
+                BANNED_COMMANDS.contains(&entry.cvar),
+                "{} missing from BANNED_COMMANDS",
+                entry.cvar
+            );
+        }
+    }
+
+    #[test]
+    fn r_drawentities_alone_is_not_fatal_because_the_engine_clamps_it() {
+        // GoldSrc resets r_drawentities to 1.0 itself while sv_cheats is 0
+        // (hw.dll 0x1d455c9), so the value never reaches DoD's client and the
+        // config line is inert. Reporting it would block a capture over
+        // something harmless -- confirmed live, the game does not quit.
+        let dir = scratch("clamped");
+        std::fs::write(dir.join("config.cfg"), "r_drawentities \"0\"\n").unwrap();
+
+        assert!(fatal_cvar_hazards(&scan(&dir)).is_empty());
+    }
+
+    #[test]
+    fn r_drawentities_is_fatal_once_a_config_also_enables_cheats() {
+        // A non-zero sv_cheats skips the engine's clamp entirely, so the value
+        // sticks and DoD's own CHud::Redraw check quits the game.
+        let dir = scratch("clamped_cheats");
+        std::fs::write(
+            dir.join("config.cfg"),
+            "sv_cheats \"1\"\nr_drawentities \"0\"\n",
+        )
+        .unwrap();
+
+        let hazards = fatal_cvar_hazards(&scan(&dir));
+        assert_eq!(hazards.len(), 1, "{hazards:?}");
+        assert_eq!(hazards[0].cvar, "r_drawentities");
+    }
+
+    #[test]
+    fn cl_lw_is_fatal_with_or_without_cheats() {
+        // No engine clamp on this one -- it takes whatever value it is given,
+        // which is why it is the half that reproduced live.
+        for (tag, extra) in [("cllw_plain", ""), ("cllw_cheats", "sv_cheats \"1\"\n")] {
+            let dir = scratch(tag);
+            std::fs::write(dir.join("config.cfg"), format!("{extra}cl_lw \"0\"\n")).unwrap();
+
+            let hazards = fatal_cvar_hazards(&scan(&dir));
+            assert_eq!(hazards.len(), 1, "extra={extra:?} -> {hazards:?}");
+            assert_eq!(hazards[0].cvar, "cl_lw");
+        }
     }
 
     #[test]

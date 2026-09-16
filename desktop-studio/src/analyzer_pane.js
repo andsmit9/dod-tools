@@ -983,7 +983,7 @@ export async function openAnalyzerDemo(path) {
   await loadAnalyzerDemo(path);
 }
 
-export async function loadAnalyzerDemo(path) {
+async function loadAnalyzerDemo(path) {
   const container = document.querySelector('#analyzer-tab-content');
   if (container) container.innerHTML = `<p class="analyzer-empty">${STRINGS.ANALYZER.ANALYZING_DEMO_ELLIPSIS}</p>`;
   setAnalyzerFileIndicator(STRINGS.ANALYZER.ANALYZING_ELLIPSIS);

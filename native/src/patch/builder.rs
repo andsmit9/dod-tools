@@ -819,8 +819,7 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
             &mut drive_free,
             &mut active_drive_idx,
             FAILOVER_THRESHOLD,
-        ).map_err(|_| std::io::Error::new(
-            std::io::ErrorKind::Other,
+        ).map_err(|_| std::io::Error::other(
             "Insufficient space across all mapped drives to allocate a block"
         ))?;
 
@@ -1185,7 +1184,7 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
             
             if !junction_str.is_empty() && !target_str.is_empty() {
                 let _ = std::process::Command::new("cmd")
-                    .args(&["/C", "mklink", "/J", junction_str, target_str])
+                    .args(["/C", "mklink", "/J", junction_str, target_str])
                     .output();
             }
         }
@@ -1234,90 +1233,33 @@ pub struct WorkspaceGuard {
 impl Drop for WorkspaceGuard {
     fn drop(&mut self) {
         // Junction link: remove_dir unlinks without touching the junction target.
-        if let Err(e) = std::fs::remove_dir(&self.session_junction) {
-            if e.kind() != std::io::ErrorKind::NotFound {
+        if let Err(e) = std::fs::remove_dir(&self.session_junction)
+            && e.kind() != std::io::ErrorKind::NotFound {
                 log::warn!("[WorkspaceGuard::drop] Failed to remove session_junction {:?}: {}", self.session_junction, e);
             }
-        }
         // Unlink every dod_pool_N and _route_N junction. `remove_dir` unlinks a
         // junction without touching what it points at, and NotFound is expected
         // for any index this batch did not route to.
         for junction in self.pool_junctions.iter().chain(self.route_junctions.iter()) {
-            if let Err(e) = std::fs::remove_dir(junction) {
-                if e.kind() != std::io::ErrorKind::NotFound {
+            if let Err(e) = std::fs::remove_dir(junction)
+                && e.kind() != std::io::ErrorKind::NotFound {
                     log::warn!("[WorkspaceGuard::drop] Failed to remove pool junction {:?}: {}", junction, e);
                 }
-            }
         }
         // Signal dirs (DOD_TOOLS_EXIT_TRIGGER) are directories, not files.
         // Use remove_dir_all; silently ignore NotFound, log anything else.
-        if let Err(e) = std::fs::remove_dir_all(&self.exit_trigger) {
-            if e.kind() != std::io::ErrorKind::NotFound {
+        if let Err(e) = std::fs::remove_dir_all(&self.exit_trigger)
+            && e.kind() != std::io::ErrorKind::NotFound {
                 log::warn!("[WorkspaceGuard::drop] Failed to remove exit_trigger {:?}: {}", self.exit_trigger, e);
             }
-        }
-        if let Some(parent) = self.exit_trigger.parent() {
-            let dod_dir = parent.join("dod");
-            
-            if self.auto_clear_logs {
-                crate::shared::paths::remove_console_log(parent);
-                let _ = std::fs::remove_file(dod_dir.join("dodtools_helper.cfg"));
-                let _ = std::fs::remove_file(dod_dir.join("dodtools_capture_done.cfg"));
-                let _ = std::fs::remove_file(dod_dir.join("dod_quit.cfg"));
-                if let Ok(entries) = std::fs::read_dir(&dod_dir) {
-                    for entry in entries.flatten() {
-                        let filename = entry.file_name().to_string_lossy().to_string();
-                        if filename.starts_with("dodtools_chain_") && filename.ends_with(".cfg") {
-                            let _ = std::fs::remove_file(entry.path());
-                        }
-                    }
-                }
-            }
-            
-            if self.auto_clear_temp_demos && !self.save_local_patched_copy {
-                // Retried, and logged loudly on final failure -- see
-                // `remove_file_retrying`'s doc comment and #198. Mirrors
-                // `CaptureCleanupGuard::drop` in `capture_engine.rs`.
-                if let Some(e) = crate::shared::paths::remove_file_retrying(&dod_dir.join("primer.dem")) {
-                    crate::log_markdown(&format!(
-                        "⚠️ **Cleanup** — could not remove primer.dem after retrying: {e} (auto_clear_temp_demos left it behind; hl.exe may still have had it open)"
-                    ));
-                }
-                if let Ok(entries) = std::fs::read_dir(&dod_dir) {
-                    for entry in entries.flatten() {
-                        let filename = entry.file_name().to_string_lossy().to_string();
-                        if crate::shared::paths::is_chain_demo_filename(&filename) {
-                            if let Some(e) = crate::shared::paths::remove_file_retrying(&entry.path()) {
-                                crate::log_markdown(&format!(
-                                    "⚠️ **Cleanup** — could not remove {filename} after retrying: {e} (auto_clear_temp_demos left it behind; hl.exe may still have had it open)"
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-
-            if self.auto_clear_previews {
-                let scan_dirs = vec![dod_dir.clone(), parent.to_path_buf()];
-                for scan_dir in scan_dirs {
-                    if let Ok(entries) = std::fs::read_dir(scan_dir) {
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            if path.is_file() {
-                                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                                    if filename.ends_with("_preview.dem") {
-                                        let sidecar = path.with_extension("dodtools_preview");
-                                        if sidecar.exists() {
-                                            let _ = std::fs::remove_file(&path);
-                                            let _ = std::fs::remove_file(sidecar);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if let Some(game_root) = self.exit_trigger.parent() {
+            crate::shared::paths::clear_capture_scratch(
+                game_root,
+                self.auto_clear_logs,
+                self.auto_clear_temp_demos,
+                self.auto_clear_previews,
+                self.save_local_patched_copy,
+            );
         }
     }
 }

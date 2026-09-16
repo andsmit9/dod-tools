@@ -50,9 +50,9 @@ pub fn use_rounds_updates(state: &mut AnalyzerState, event: &AnalyzerEvent) {
                 }
 
                 RoundState::AlliesWin | RoundState::AxisWin | RoundState::Draw => {
-                    if let Some(last_round) = state.rounds.last() {
-                        if matches!(last_round, Round::Active { .. }) {
-                            if let Some(Round::Active {
+                    if let Some(last_round) = state.rounds.last()
+                        && matches!(last_round, Round::Active { .. })
+                            && let Some(Round::Active {
                                 start_time,
                                 allies_kills,
                                 axis_kills,
@@ -75,8 +75,6 @@ pub fn use_rounds_updates(state: &mut AnalyzerState, event: &AnalyzerEvent) {
 
                                 state.rounds.push(completed_round);
                             }
-                        }
-                    }
                 }
 
                 _ => {}

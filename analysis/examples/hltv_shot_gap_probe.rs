@@ -282,7 +282,7 @@ fn report_longest_bursts(bursts: &[Burst]) {
     }
 
     println!("\nlongest sustained bursts -- seek here to see automatic fire:");
-    println!("{:<12} {:>7} {:>10}  {}", "weapon", "rounds", "demo time", "seek to");
+    println!("{:<12} {:>7} {:>10}  seek to", "weapon", "rounds", "demo time");
     for b in longest.iter().take(12) {
         // A couple of seconds early, so the camera is settled and on the player
         // before the burst rather than arriving mid-way through it.

@@ -224,8 +224,8 @@ pub fn detect(hlae_exe: &Path) -> HlaeFfmpeg {
     }
 
     let ini = folder.join(INI_NAME);
-    if let Ok(body) = std::fs::read_to_string(&ini) {
-        if let Some(target) = parse_ini_path(&body) {
+    if let Ok(body) = std::fs::read_to_string(&ini)
+        && let Some(target) = parse_ini_path(&body) {
             let target_exists = target.is_file();
             return HlaeFfmpeg::Linked {
                 ini,
@@ -234,7 +234,6 @@ pub fn detect(hlae_exe: &Path) -> HlaeFfmpeg {
                 ours: authored_by_us(&body),
             };
         }
-    }
 
     HlaeFfmpeg::Missing { folder }
 }

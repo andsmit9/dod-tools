@@ -84,7 +84,7 @@ impl BitReader {
 
     /// Returns the number of bits read into bytes.
     pub fn get_consumed_bytes(&self) -> usize {
-        (self.get_offset() + 7) / 8
+        self.get_offset().div_ceil(8)
     }
 }
 

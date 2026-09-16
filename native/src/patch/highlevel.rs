@@ -70,8 +70,8 @@ pub fn patch_demo_highlights(
     }
 
     // Fast forward initially if first highlight is a bit in
-    if let Some(&(first_start, _)) = merged_intervals.first() {
-        if first_start > initial_delay + pre_record_buffer {
+    if let Some(&(first_start, _)) = merged_intervals.first()
+        && first_start > initial_delay + pre_record_buffer {
             entry.frames.push(Frame {
                 time: start_of_playback + initial_delay,
                 frame: 0,
@@ -80,7 +80,6 @@ pub fn patch_demo_highlights(
                 }),
             });
         }
-    }
 
     for &(start_time, stop_time) in &merged_intervals {
         // Check if player died within 5.0 seconds before streak start
@@ -181,8 +180,8 @@ pub fn patch_demo_highlights(
     }
 
     // e. Exit On Finish: quit command after the last stop record
-    if options.exit_on_finish {
-        if let Some(&(_, last_stop)) = merged_intervals.last() {
+    if options.exit_on_finish
+        && let Some(&(_, last_stop)) = merged_intervals.last() {
             let quit_time = last_stop + post_record_buffer + 0.5;
             entry.frames.push(Frame {
                 time: quit_time,
@@ -192,7 +191,6 @@ pub fn patch_demo_highlights(
                 }),
             });
         }
-    }
 
     // Sort frames by time
     entry.frames.sort_by(|a, b| a.time.partial_cmp(&b.time).unwrap_or(std::cmp::Ordering::Equal));

@@ -59,7 +59,7 @@ pub fn scan_dir(
                 scan_dir(&path, files, cancel, progress);
             } else if path
                 .extension()
-                .map_or(false, |ext| ext.eq_ignore_ascii_case("dem"))
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("dem"))
             {
                 files.push(path);
             }

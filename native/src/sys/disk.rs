@@ -36,13 +36,11 @@ pub fn get_available_bytes(path: &std::path::Path) -> u64 {
     let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
 
     // Fast path: return cached value if within TTL.
-    if let Ok(guard) = cache.lock() {
-        if let Some(&(last, bytes)) = guard.get(&path_key) {
-            if last.elapsed().as_millis() < TTL_MS {
+    if let Ok(guard) = cache.lock()
+        && let Some(&(last, bytes)) = guard.get(&path_key)
+            && last.elapsed().as_millis() < TTL_MS {
                 return bytes;
             }
-        }
-    }
 
     // Slow path: refresh disk list and update cache. A mount-point prefix
     // match alone isn't enough — "C:/real/folder|garbage" prefix-matches

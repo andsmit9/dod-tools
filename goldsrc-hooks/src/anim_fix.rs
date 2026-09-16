@@ -173,33 +173,33 @@ fn deploy_state_from_body_sequence(label: &str) -> Option<DeployState> {
 /// every grenade, and "slash1" the knife and spade.
 const ATTACK_SEQUENCES: &[&str] = &["shoot", "launch", "fire", "throw", "slash1"];
 
-/// Why grenades get no pin-pull animation, despite having one.
-///
-/// A grenade's viewmodel animates `idle -> pinpull -> (cook) -> throw`, and the
-/// pin pull is unreachable for a spectated player: `p_grenade`, `p_stick` and
-/// `p_mills` carry a single `idle` sequence each, and `weapons/grenpinpull.wav`
-/// appears in no demo's `svc_sound`, POV included -- it is played client-side
-/// for the local player only, exactly like the animation it accompanies.
-///
-/// What is observable is the body sequence entering its grenade attack, and
-/// that is the **release**, not the pull. Two measurements settle it:
-///
-/// - body sequence to `weapons/grenthrow.wav`: 846 throws across three HLTV
-///   halves, 0.461s to 0.566s, median 0.494s, one-to-one with no orphans in
-///   either direction. Far too tight to be a player holding a button.
-/// - the real cook time, taken from a POV demo's own viewmodel animations
-///   (`pinpull` to `throw`): 0.065s to 4.852s, medians 0.64s and 1.46s across
-///   two demos. That is the button being held -- and DoD players also "prime"
-///   grenades, rolling one out and picking it back up to shorten the remaining
-///   fuse, which widens the spread further still.
-///
-/// So the steady 0.49s is the throw animation's own wind-up before the grenade
-/// leaves the hand, and playing `throw` the moment the body sequence changes is
-/// right. An earlier attempt read that gap as the pin pull and deferred the
-/// throw by it, which played `pinpull` at the instant the player was actually
-/// throwing and released the grenade half a second late.
-///
-/// See `analysis/examples/grenade_timing_probe.rs`.
+// Why grenades get no pin-pull animation, despite having one.
+//
+// A grenade's viewmodel animates `idle -> pinpull -> (cook) -> throw`, and the
+// pin pull is unreachable for a spectated player: `p_grenade`, `p_stick` and
+// `p_mills` carry a single `idle` sequence each, and `weapons/grenpinpull.wav`
+// appears in no demo's `svc_sound`, POV included -- it is played client-side
+// for the local player only, exactly like the animation it accompanies.
+//
+// What is observable is the body sequence entering its grenade attack, and
+// that is the **release**, not the pull. Two measurements settle it:
+//
+// - body sequence to `weapons/grenthrow.wav`: 846 throws across three HLTV
+//   halves, 0.461s to 0.566s, median 0.494s, one-to-one with no orphans in
+//   either direction. Far too tight to be a player holding a button.
+// - the real cook time, taken from a POV demo's own viewmodel animations
+//   (`pinpull` to `throw`): 0.065s to 4.852s, medians 0.64s and 1.46s across
+//   two demos. That is the button being held -- and DoD players also "prime"
+//   grenades, rolling one out and picking it back up to shorten the remaining
+//   fuse, which widens the spread further still.
+//
+// So the steady 0.49s is the throw animation's own wind-up before the grenade
+// leaves the hand, and playing `throw` the moment the body sequence changes is
+// right. An earlier attempt read that gap as the pin pull and deferred the
+// throw by it, which played `pinpull` at the instant the player was actually
+// throwing and released the grenade half a second late.
+//
+// See `analysis/examples/grenade_timing_probe.rs`.
 
 /// `"models/v_98k.mdl"` -> `"98k"`, `"models/p_mg42bd.mdl"` -> `"mg42bd"`.
 ///
@@ -575,8 +575,8 @@ fn play_viewmodel_animation(
     unsafe { (engfuncs.pfn_weapon_anim)(sequence, 0) };
 }
 
-/// What `apply()` last saw, published for `on_weapon_fired`, which runs from
-/// the sound hook on the same thread but has none of this context.
+// What `apply()` last saw, published for `on_weapon_fired`, which runs from
+// the sound hook on the same thread but has none of this context.
 
 /// Demo time of the last firing animation played, so the two independent
 /// triggers cannot both play one shot.
@@ -1188,7 +1188,7 @@ mod tests {
     /// can cost at most the animation at the boundary.
     #[test]
     fn a_time_jump_does_not_leave_the_state_stuck() {
-        let (a, b) = (1 as *mut ModelSPartial, 2 as *mut ModelSPartial);
+        let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
         reset_settle_state();
         LAST_FIRE_PLAYED.store(0f64.to_bits(), Ordering::Relaxed);
 
@@ -1223,7 +1223,7 @@ mod tests {
     /// recording would. This used to assert the opposite, on a misdiagnosis.
     #[test]
     fn rapid_switching_still_draws_each_time() {
-        let (a, b) = (1 as *mut ModelSPartial, 2 as *mut ModelSPartial);
+        let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
         reset_settle_state();
 
         assert!(!viewmodel_settled_on_a_new_weapon(a, 0.0));
@@ -1246,7 +1246,7 @@ mod tests {
     /// back within a frame or two, which should read as no switch at all.
     #[test]
     fn a_single_frame_blip_is_absorbed() {
-        let (a, b) = (1 as *mut ModelSPartial, 2 as *mut ModelSPartial);
+        let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
         reset_settle_state();
         assert!(!viewmodel_settled_on_a_new_weapon(a, 0.0));
         assert!(!viewmodel_settled_on_a_new_weapon(a, 1.0));
@@ -1258,7 +1258,7 @@ mod tests {
 
     #[test]
     fn a_weapon_that_holds_still_reports_once() {
-        let (a, b) = (1 as *mut ModelSPartial, 2 as *mut ModelSPartial);
+        let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
         reset_settle_state();
 
         assert!(!viewmodel_settled_on_a_new_weapon(a, 0.0));

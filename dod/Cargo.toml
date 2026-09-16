@@ -7,3 +7,5 @@ edition.workspace = true
 nom = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 
+[lints]
+workspace = true

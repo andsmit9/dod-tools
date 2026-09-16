@@ -54,7 +54,7 @@ fn main() {
                                 .split('\\')
                                 .collect();
                             let f: HashMap<&str, &str> =
-                                parts.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+                                parts.as_chunks::<2>().0.iter().map(|&[k, v]| (k, v)).collect();
                             if f.is_empty() {
                                 slot_sid.remove(&ui.index);
                                 continue;
@@ -98,11 +98,9 @@ fn main() {
                             UserMessage::DeathMsg(d) => {
                                 if d.killer_client_index > 0
                                     && d.killer_client_index != d.victim_client_index
-                                {
-                                    if let Some(sid) = slot_sid.get(&(d.killer_client_index - 1)) {
+                                    && let Some(sid) = slot_sid.get(&(d.killer_client_index - 1)) {
                                         players.entry(sid.clone()).or_default().derived_kills += 1;
                                     }
-                                }
                             }
                             _ => {}
                         }

@@ -28,9 +28,11 @@ pub const MAX_PAYLOAD_SIZE: usize = MAX_PAYLOAD_LIMIT_BYTES;
 /// keep up slows the capture instead of failing, and the size ranking is
 /// probably close to the inverse of the real-time-viability ranking.
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub enum CaptureCodec {
     /// Built for real-time capture: fast, multithreaded, simple prediction.
     /// 486 MB (0.49x). The default, and the only one proven in a real capture.
+    #[default]
     UtVideo,
     /// Smaller (420 MB, 0.42x) but a range coder with context modelling — far
     /// heavier per frame, and competing with `hl.exe` for cores during capture.
@@ -83,11 +85,6 @@ impl CaptureCodec {
     }
 }
 
-impl Default for CaptureCodec {
-    fn default() -> Self {
-        Self::UtVideo
-    }
-}
 
 // ── Command scheduling ────────────────────────────────────────────────────────
 

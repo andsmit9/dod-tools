@@ -75,21 +75,18 @@ fn collect_wav_files(take_folder: &Path) -> Vec<String> {
     let mut wav_files = Vec::new();
     if let Ok(read_dir) = std::fs::read_dir(take_folder) {
         for sub_entry in read_dir.flatten() {
-            if let Ok(file_type) = sub_entry.file_type() {
-                if file_type.is_file() {
+            if let Ok(file_type) = sub_entry.file_type()
+                && file_type.is_file() {
                     let path = sub_entry.path();
-                    if let Some(ext) = path.extension() {
-                        if ext.to_string_lossy().to_lowercase() == "wav" {
-                            if let Some(name) = path.file_name() {
+                    if let Some(ext) = path.extension()
+                        && ext.to_string_lossy().to_lowercase() == "wav"
+                            && let Some(name) = path.file_name() {
                                 wav_files.push(name.to_string_lossy().into_owned());
                             }
-                        }
-                    }
                 }
-            }
         }
     }
-    wav_files.sort_by(|a, b| a.to_lowercase().cmp(&b.to_lowercase()));
+    wav_files.sort_by_key(|a| a.to_lowercase());
     wav_files
 }
 
@@ -220,13 +217,12 @@ fn avi_frame_count(path: &Path) -> Option<usize> {
             b"avih" => {
                 total_frames = u32_at(&buf, body + 16).unwrap_or(0);
             }
-            b"strh" => {
+            b"strh"
                 // Only the video stream's length is meaningful here; an audio
                 // stream's dwLength counts samples or blocks, not frames.
-                if buf.get(body..body + 4) == Some(b"vids") && stream_length == 0 {
+                if buf.get(body..body + 4) == Some(b"vids") && stream_length == 0 => {
                     stream_length = u32_at(&buf, body + 32).unwrap_or(0);
                 }
-            }
             _ => {}
         }
 
@@ -446,11 +442,9 @@ pub fn is_renderable_take(take_folder: &Path) -> bool {
         for entry in read_dir.flatten() {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false)
                 && entry.file_name().to_string_lossy().to_lowercase().starts_with("take")
-            {
-                if take_shape_is_renderable(&entry.path()) {
+                && take_shape_is_renderable(&entry.path()) {
                     return true;
                 }
-            }
         }
     }
     false
@@ -705,16 +699,14 @@ fn count_bmps(folder: &Path) -> usize {
     let mut count = 0;
     if let Ok(read_dir) = std::fs::read_dir(folder) {
         for entry in read_dir.flatten() {
-            if let Ok(file_type) = entry.file_type() {
-                if file_type.is_file() {
+            if let Ok(file_type) = entry.file_type()
+                && file_type.is_file() {
                     let path = entry.path();
-                    if let Some(ext) = path.extension() {
-                        if ext.to_string_lossy().to_lowercase() == "bmp" {
+                    if let Some(ext) = path.extension()
+                        && ext.to_string_lossy().to_lowercase() == "bmp" {
                             count += 1;
                         }
-                    }
                 }
-            }
         }
     }
     count
@@ -722,13 +714,12 @@ fn count_bmps(folder: &Path) -> usize {
 
 fn get_clip_date(img_folder_path: &Path) -> String {
     let bmp_path = img_folder_path.join("00000.bmp");
-    if let Ok(metadata) = std::fs::metadata(&bmp_path).or_else(|_| std::fs::metadata(img_folder_path)) {
-        if let Ok(created) = metadata.created().or_else(|_| metadata.modified()) {
+    if let Ok(metadata) = std::fs::metadata(&bmp_path).or_else(|_| std::fs::metadata(img_folder_path))
+        && let Ok(created) = metadata.created().or_else(|_| metadata.modified()) {
             return chrono::DateTime::<chrono::Local>::from(created)
                 .format("%Y-%m-%d %I:%M %p")
                 .to_string();
         }
-    }
     "-".to_string()
 }
 

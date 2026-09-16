@@ -53,11 +53,10 @@ fn main() {
                         _ => {}
                     },
                     NetMessage::UserMessage(um) => {
-                        if let Ok(UserMessage::DeathMsg(d)) = UserMessage::new(&um.name, &um.data) {
-                            if d.killer_client_index != d.victim_client_index && d.killer_client_index > 0 {
+                        if let Ok(UserMessage::DeathMsg(d)) = UserMessage::new(&um.name, &um.data)
+                            && d.killer_client_index != d.victim_client_index && d.killer_client_index > 0 {
                                 kill_frames.push((frame_no, format!("{:?}", d.weapon)));
                             }
-                        }
                     }
                 }
             }

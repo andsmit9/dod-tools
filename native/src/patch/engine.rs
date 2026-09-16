@@ -82,31 +82,31 @@ fn write_director_event_payload(
     Ok(total_bytes as i32)
 }
 
-/// Forces the spectator view into one player's eyes by injecting
-/// `DRC_CMD_INEYE`, as a **standalone** network-message frame.
-///
-/// Standalone is the whole point. An HLTV demo carries every player's
-/// highlights and its camera is the auto-director's, so putting the view on the
-/// player a clip is about used to mean clicking through spectator targets by
-/// hand. The first attempt at doing it from the stream prepended this
-/// svc_director inside the *existing* frame's payload instead of writing its
-/// own frame, and the result would not play at all -- "illegal server message"
-/// and "packet read overflow" on load, which is the documented consequence of
-/// interleaving injected messages into an existing packet.
-///
-/// Used by `preview_cli --player`; see `HIJACK_REASSERT_SECONDS` for why it is
-/// written repeatedly rather than once.
-///
-/// It is NOT about first-person demos. Those already record the only camera
-/// they have, and the Highlights table filters a POV demo down to the recording
-/// player (`isVisibleStreak`, `detail_pane.js`), so nothing there needs a view
-/// hijack. Other players' streaks are scanned out of a POV demo only so the
-/// Demo Analyzer can build a scoreboard from them.
-///
-/// Anything reasoning about where the capture camera is — the decal flush's
-/// visibility test most of all — reads the demo's recorded `refparams`, which
-/// is correct exactly while this stays unused. Switching it on moves the camera
-/// away from what those samples describe, and the flush would have to follow.
+// Forces the spectator view into one player's eyes by injecting
+// `DRC_CMD_INEYE`, as a **standalone** network-message frame.
+//
+// Standalone is the whole point. An HLTV demo carries every player's
+// highlights and its camera is the auto-director's, so putting the view on the
+// player a clip is about used to mean clicking through spectator targets by
+// hand. The first attempt at doing it from the stream prepended this
+// svc_director inside the *existing* frame's payload instead of writing its
+// own frame, and the result would not play at all -- "illegal server message"
+// and "packet read overflow" on load, which is the documented consequence of
+// interleaving injected messages into an existing packet.
+//
+// Used by `preview_cli --player`; see `HIJACK_REASSERT_SECONDS` for why it is
+// written repeatedly rather than once.
+//
+// It is NOT about first-person demos. Those already record the only camera
+// they have, and the Highlights table filters a POV demo down to the recording
+// player (`isVisibleStreak`, `detail_pane.js`), so nothing there needs a view
+// hijack. Other players' streaks are scanned out of a POV demo only so the
+// Demo Analyzer can build a scoreboard from them.
+//
+// Anything reasoning about where the capture camera is — the decal flush's
+// visibility test most of all — reads the demo's recorded `refparams`, which
+// is correct exactly while this stays unused. Switching it on moves the camera
+// away from what those samples describe, and the flush would have to follow.
 // GoldSrc's director stream cannot aim DoD's spectator camera. DoD 1.3's
 // client handles DRC commands 1-10 only -- its jump table has exactly ten
 // entries behind a `cmp cmd-1, 9 / ja default` bounds check -- so DRC_CMD_CHASE

@@ -172,6 +172,23 @@ pub struct BannedCommandRow {
     pub command: String,
 }
 
+/// A config sets a `cfg_scan::FATAL_CVARS` entry to something other than the
+/// one value DoD's own client will not quit the game over.
+///
+/// Distinct from `BannedCommandRow`: that one is a command the user *typed*
+/// into Initial or Scheduled Commands, which the app can simply refuse to run.
+/// This is a value already sitting in a config file the app never writes to
+/// (see `cfg_scan`'s module doc) -- the most it can do is say so.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CfgFatalRow {
+    pub cvar: String,
+    pub value: String,
+    pub required: String,
+    pub file: String,
+    pub line: usize,
+}
+
 /// A command from `cfg_scan::NOOP_IN_INIT_COMMANDS` or
 /// `NOOP_EVERYWHERE_COMMANDS` found somewhere that has no effect — never
 /// blocking, just something the user should stop expecting to matter.
@@ -230,6 +247,13 @@ pub struct CfgReport {
     /// scheduled, so they show up in `banned_scheduled` instead).
     pub noop_init: Vec<NoopCommandRow>,
     pub noop_scheduled: Vec<NoopCommandRow>,
+    /// `cfg_scan::FATAL_CVARS` entries a config sets wrong -- DoD's own
+    /// client quits the game outright the moment it renders a HUD frame with
+    /// one of these not at its required value. Not blocking (nothing here can
+    /// force a fix to a file the app never writes), but the most severe
+    /// warning this report carries: everything else degrades a capture,
+    /// this one crashes the game.
+    pub fatal_cvars: Vec<CfgFatalRow>,
 }
 
 /// Scheduled commands in the order the engine reaches them.
@@ -376,7 +400,7 @@ pub async fn scan_game_configs(
         // still counts as seeing it, so that is not reported as unseen.
         let named: std::collections::HashSet<String> = effective_commands
             .iter()
-            .filter_map(|c| c.trim().split_whitespace().next().map(str::to_lowercase))
+            .filter_map(|c| c.split_whitespace().next().map(str::to_lowercase))
             .collect();
         // mirv_fov/default_fov are read directly from an executed config
         // whenever neither is stated in Initial Commands
@@ -518,6 +542,20 @@ pub async fn scan_game_configs(
             }
         }
 
+        // Config-file values DoD's own client will quit the game over --
+        // distinct from banned_init/banned_scheduled, which is about commands
+        // typed into the pipeline's own fields (see CfgFatalRow's doc comment).
+        let fatal_cvars: Vec<CfgFatalRow> = native::patch::cfg_scan::fatal_cvar_hazards(&scan)
+            .into_iter()
+            .map(|f| CfgFatalRow {
+                file: f.file_name(),
+                cvar: f.cvar,
+                value: f.value,
+                required: f.required,
+                line: f.line,
+            })
+            .collect();
+
         CfgReport {
             unseen,
             overrides,
@@ -529,6 +567,7 @@ pub async fn scan_game_configs(
             decal_flush_is_noop,
             noop_init,
             noop_scheduled,
+            fatal_cvars,
         }
     })
     .await
@@ -622,13 +661,6 @@ pub fn roll_floors(
     }
 }
 
-/// The URL a map would be fetched from, so a prompt can show it before anything
-/// reaches the network.
-#[tauri::command]
-pub fn map_download_url(map_name: String) -> Result<String, String> {
-    map_fetch::map_url(map_fetch::DEFAULT_MIRROR, &map_name)
-}
-
 /// Download one map and install it, verified against the build the demo wants.
 ///
 /// This writes into the user's game folder and talks to the network, so it is
@@ -687,10 +719,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
-        std::fs::write(&dod.join("config.cfg"), "bind \"F7\" \"r_decals 4000\"\nexec movie.cfg\n")
+        std::fs::write(dod.join("config.cfg"), "bind \"F7\" \"r_decals 4000\"\nexec movie.cfg\n")
             .unwrap();
         std::fs::write(
-            &dod.join("movie.cfg"),
+            dod.join("movie.cfg"),
             // hud_deathnotice_time is here because it is the cvar people
             // genuinely pair around a clip — raised before, restored after.
             "r_decals \"0\"\nmirv_movie_fps \"300\"\nhud_deathnotice_time \"10\"\nmirv_fov \"105\"\n",
@@ -711,8 +743,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
-        std::fs::write(&dod.join("config.cfg"), "exec movie.cfg\n").unwrap();
-        std::fs::write(&dod.join("movie.cfg"), "mirv_movie_fps \"300\"\n").unwrap();
+        std::fs::write(dod.join("config.cfg"), "exec movie.cfg\n").unwrap();
+        std::fs::write(dod.join("movie.cfg"), "mirv_movie_fps \"300\"\n").unwrap();
         let exe = root.join("hl.exe");
         std::fs::write(&exe, b"").unwrap();
         exe.to_string_lossy().to_string()
@@ -726,8 +758,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
-        std::fs::write(&dod.join("config.cfg"), "exec movie.cfg\n").unwrap();
-        std::fs::write(&dod.join("movie.cfg"), format!("r_decals \"{}\"\n", value)).unwrap();
+        std::fs::write(dod.join("config.cfg"), "exec movie.cfg\n").unwrap();
+        std::fs::write(dod.join("movie.cfg"), format!("r_decals \"{}\"\n", value)).unwrap();
         let exe = root.join("hl.exe");
         std::fs::write(&exe, b"").unwrap();
         exe.to_string_lossy().to_string()
@@ -741,8 +773,29 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
-        std::fs::write(&dod.join("config.cfg"), "exec movie.cfg\n").unwrap();
-        std::fs::write(&dod.join("movie.cfg"), "mirv_movie_filename \"clip\"\n").unwrap();
+        std::fs::write(dod.join("config.cfg"), "exec movie.cfg\n").unwrap();
+        std::fs::write(dod.join("movie.cfg"), "mirv_movie_filename \"clip\"\n").unwrap();
+        let exe = root.join("hl.exe");
+        std::fs::write(&exe, b"").unwrap();
+        exe.to_string_lossy().to_string()
+    }
+
+    /// Same shape again, movie.cfg assigning `r_drawentities` to a value other
+    /// than 1. Only fatal when the config also turns cheats on: while
+    /// `sv_cheats` is 0 GoldSrc clamps the cvar back itself and DoD's client
+    /// never sees the value (`cfg_scan::FatalCvar::needs_sv_cheats`).
+    fn fake_game_with_r_drawentities(tag: &str, value: &str, cheats: bool) -> String {
+        let root = std::env::temp_dir().join(format!("dod_cfgrep_fatal_{}_{}", tag, std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dod = root.join("dod");
+        std::fs::create_dir_all(&dod).unwrap();
+        std::fs::write(dod.join("config.cfg"), "exec movie.cfg\n").unwrap();
+        let cheat_line = if cheats { "sv_cheats \"1\"\n" } else { "" };
+        std::fs::write(
+            dod.join("movie.cfg"),
+            format!("{}r_drawentities \"{}\"\n", cheat_line, value),
+        )
+        .unwrap();
         let exe = root.join("hl.exe");
         std::fs::write(&exe, b"").unwrap();
         exe.to_string_lossy().to_string()
@@ -914,6 +967,77 @@ mod tests {
         assert_eq!(r.banned_init.len(), 1, "{:?}", r.banned_init);
         assert_eq!(r.banned_init[0].cvar, "mirv_recordmovie_start");
         assert!(r.banned_scheduled.is_empty());
+    }
+
+    #[test]
+    fn r_drawentities_and_cl_lw_in_initial_commands_are_reported_as_banned() {
+        let r = report("banned_fatal_init", &["r_drawentities 0", "cl_lw 0"], &[], 120);
+
+        let cvars: Vec<&str> = r.banned_init.iter().map(|b| b.cvar.as_str()).collect();
+        assert_eq!(cvars, vec!["r_drawentities", "cl_lw"], "{:?}", r.banned_init);
+    }
+
+    #[test]
+    fn r_drawentities_and_cl_lw_in_scheduled_commands_are_reported_as_banned() {
+        let r = report("banned_fatal_scheduled", &[], &["r_drawentities 0", "cl_lw 0"], 120);
+
+        let cvars: Vec<&str> = r.banned_scheduled.iter().map(|b| b.cvar.as_str()).collect();
+        assert_eq!(cvars, vec!["r_drawentities", "cl_lw"], "{:?}", r.banned_scheduled);
+    }
+
+    #[test]
+    fn a_config_setting_r_drawentities_to_zero_is_reported_as_fatal() {
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        let r = rt
+            .block_on(scan_game_configs(
+                fake_game_with_r_drawentities("fatal_config", "0", true),
+                vec![],
+                vec![],
+                Some(120),
+                Some(true),
+            ))
+            .unwrap();
+
+        assert_eq!(r.fatal_cvars.len(), 1, "{:?}", r.fatal_cvars);
+        assert_eq!(r.fatal_cvars[0].cvar, "r_drawentities");
+        assert_eq!(r.fatal_cvars[0].value, "0");
+        assert_eq!(r.fatal_cvars[0].required, "1");
+        assert_eq!(r.fatal_cvars[0].file, "movie.cfg");
+    }
+
+    #[test]
+    fn r_drawentities_without_sv_cheats_is_not_reported_as_fatal() {
+        // The engine clamps it back to 1.0 on its own, so the line is inert
+        // and flagging it would block a capture over nothing. Confirmed live:
+        // setting r_drawentities with cheats off does not close the game.
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        let r = rt
+            .block_on(scan_game_configs(
+                fake_game_with_r_drawentities("fatal_no_cheats", "0", false),
+                vec![],
+                vec![],
+                Some(120),
+                Some(true),
+            ))
+            .unwrap();
+
+        assert!(r.fatal_cvars.is_empty(), "{:?}", r.fatal_cvars);
+    }
+
+    #[test]
+    fn a_config_setting_r_drawentities_to_one_is_not_reported_as_fatal() {
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        let r = rt
+            .block_on(scan_game_configs(
+                fake_game_with_r_drawentities("fatal_config_ok", "1", true),
+                vec![],
+                vec![],
+                Some(120),
+                Some(true),
+            ))
+            .unwrap();
+
+        assert!(r.fatal_cvars.is_empty(), "{:?}", r.fatal_cvars);
     }
 
     #[test]

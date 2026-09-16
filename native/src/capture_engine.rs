@@ -143,16 +143,14 @@ impl CaptureCleanupGuard {
         save_local_patched_copy: bool,
     ) -> Self {
         // Pre-clean any stale signal dirs/junctions from a previous aborted run.
-        if let Err(e) = std::fs::remove_dir_all(&exit_trigger) {
-            if e.kind() != std::io::ErrorKind::NotFound {
+        if let Err(e) = std::fs::remove_dir_all(&exit_trigger)
+            && e.kind() != std::io::ErrorKind::NotFound {
                 log::warn!("[GC::new] Failed to pre-clean exit_trigger {:?}: {}", exit_trigger, e);
             }
-        }
-        if let Err(e) = std::fs::remove_dir(&session_junction) {
-            if e.kind() != std::io::ErrorKind::NotFound {
+        if let Err(e) = std::fs::remove_dir(&session_junction)
+            && e.kind() != std::io::ErrorKind::NotFound {
                 log::warn!("[GC::new] Failed to pre-clean session_junction {:?}: {}", session_junction, e);
             }
-        }
         Self {
             exit_trigger,
             session_junction,
@@ -177,91 +175,31 @@ impl Drop for CaptureCleanupGuard {
         // recording. Best-effort and silent by design — there is nobody left
         // to report to, and a cleanup path that panics is worse than one that
         // quietly does nothing.
-        if let Some(obs) = self.obs.take() {
-            if let Ok(mut guard) = obs.lock() {
+        if let Some(obs) = self.obs.take()
+            && let Ok(mut guard) = obs.lock() {
                 if let Some(client) = guard.as_mut() {
                     client.stop_record_quietly();
                 }
                 *guard = None;
             }
-        }
 
-        if let Err(e) = std::fs::remove_dir_all(&self.exit_trigger) {
-            if e.kind() != std::io::ErrorKind::NotFound {
+        if let Err(e) = std::fs::remove_dir_all(&self.exit_trigger)
+            && e.kind() != std::io::ErrorKind::NotFound {
                 log::warn!("[GC::drop] Failed to remove exit_trigger {:?}: {}", self.exit_trigger, e);
             }
-        }
-        if let Err(e) = std::fs::remove_dir(&self.session_junction) {
-            if e.kind() != std::io::ErrorKind::NotFound {
+        if let Err(e) = std::fs::remove_dir(&self.session_junction)
+            && e.kind() != std::io::ErrorKind::NotFound {
                 log::warn!("[GC::drop] Failed to remove session_junction {:?}: {}", self.session_junction, e);
             }
-        }
 
-        if let Some(parent) = self.exit_trigger.parent() {
-            let dod_dir = parent.join("dod");
-            
-            if self.auto_clear_logs {
-                crate::shared::paths::remove_console_log(parent);
-                let _ = std::fs::remove_file(dod_dir.join("dodtools_helper.cfg"));
-                let _ = std::fs::remove_file(dod_dir.join("dodtools_capture_done.cfg"));
-                let _ = std::fs::remove_file(dod_dir.join("dod_quit.cfg"));
-                if let Ok(entries) = std::fs::read_dir(&dod_dir) {
-                    for entry in entries.flatten() {
-                        let filename = entry.file_name().to_string_lossy().to_string();
-                        if filename.starts_with("dodtools_chain_") && filename.ends_with(".cfg") {
-                            let _ = std::fs::remove_file(entry.path());
-                        }
-                    }
-                }
-            }
-            
-            if self.auto_clear_temp_demos && !self.save_local_patched_copy {
-                // Retried, and logged loudly on final failure -- unlike every
-                // other `let _ = std::fs::remove_file` in this Drop impl, the
-                // last demo in a batch can still have hl.exe's file handle
-                // attached to it here (see #198's investigation), and a
-                // leftover chain file after auto-clear went completely
-                // unnoticed the first time this happened.
-                if let Some(e) = crate::shared::paths::remove_file_retrying(&dod_dir.join("primer.dem")) {
-                    log_markdown(&format!(
-                        "⚠️ **Cleanup** — could not remove primer.dem after retrying: {e} (auto_clear_temp_demos left it behind; hl.exe may still have had it open)"
-                    ));
-                }
-                if let Ok(entries) = std::fs::read_dir(&dod_dir) {
-                    for entry in entries.flatten() {
-                        let filename = entry.file_name().to_string_lossy().to_string();
-                        if crate::shared::paths::is_chain_demo_filename(&filename) {
-                            if let Some(e) = crate::shared::paths::remove_file_retrying(&entry.path()) {
-                                log_markdown(&format!(
-                                    "⚠️ **Cleanup** — could not remove {filename} after retrying: {e} (auto_clear_temp_demos left it behind; hl.exe may still have had it open)"
-                                ));
-                            }
-                        }
-                    }
-                }
-            }
-
-            if self.auto_clear_previews {
-                let scan_dirs = vec![dod_dir.clone(), parent.to_path_buf()];
-                for scan_dir in scan_dirs {
-                    if let Ok(entries) = std::fs::read_dir(scan_dir) {
-                        for entry in entries.flatten() {
-                            let path = entry.path();
-                            if path.is_file() {
-                                if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                                    if filename.ends_with("_preview.dem") {
-                                        let sidecar = path.with_extension("dodtools_preview");
-                                        if sidecar.exists() {
-                                            let _ = std::fs::remove_file(&path);
-                                            let _ = std::fs::remove_file(sidecar);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        if let Some(game_root) = self.exit_trigger.parent() {
+            crate::shared::paths::clear_capture_scratch(
+                game_root,
+                self.auto_clear_logs,
+                self.auto_clear_temp_demos,
+                self.auto_clear_previews,
+                self.save_local_patched_copy,
+            );
         }
     }
 }
@@ -351,7 +289,7 @@ pub fn spawn_capture_engine(
                 return;
             }
 
-            match std::process::Command::new("cmd").args(&["/C", "mklink", "/J", session_junction_str, session_dir_str]).output() {
+            match std::process::Command::new("cmd").args(["/C", "mklink", "/J", session_junction_str, session_dir_str]).output() {
                 Ok(out) if !out.status.success() => {
                     log_crash_abort!(tx, format!("mklink failed for session_junction: {}", String::from_utf8_lossy(&out.stderr)));
                     return;
@@ -387,7 +325,7 @@ pub fn spawn_capture_engine(
                     return;
                 }
                 let status = std::process::Command::new("cmd")
-                    .args(&[
+                    .args([
                         "/C", "mklink", "/J",
                         junction_str,
                         target_str,
@@ -750,16 +688,14 @@ pub fn spawn_capture_engine(
                     if obs_mode && marker.kind == crate::obs::MarkerKind::BatchComplete {
                         obs_batch_complete_seen = true;
                     }
-                    if marker.kind == crate::obs::MarkerKind::DemoStart {
-                        if let Some((job_idx, total, clips)) = marker.demo_progress {
+                    if marker.kind == crate::obs::MarkerKind::DemoStart
+                        && let Some((job_idx, total, clips)) = marker.demo_progress {
                             let _ = tx.send(EngineEvent::DemoLoading(job_idx, total, clips));
                         }
-                    }
-                    if marker.kind == crate::obs::MarkerKind::NextClip {
-                        if let Some((job_idx, total, clip_idx, clip_count)) = marker.next_clip_progress {
+                    if marker.kind == crate::obs::MarkerKind::NextClip
+                        && let Some((job_idx, total, clip_idx, clip_count)) = marker.next_clip_progress {
                             let _ = tx.send(EngineEvent::FastForwardToClip(job_idx, total, clip_idx, clip_count));
                         }
-                    }
                 }
 
                 if !launcher_exit_logged {
@@ -797,9 +733,9 @@ pub fn spawn_capture_engine(
                 // notifications, crash detection, and all of OBS capture —
                 // simply never fires. The batch still finishes, so it looks like
                 // success. Say so loudly instead.
-                if !condebug_write_checked {
-                    if let Some(seen) = hl_first_seen {
-                        if seen.elapsed() >= CONDEBUG_WRITE_GRACE {
+                if !condebug_write_checked
+                    && let Some(seen) = hl_first_seen
+                        && seen.elapsed() >= CONDEBUG_WRITE_GRACE {
                             condebug_write_checked = true;
                             if console_log_len(&log_path) == log_len_before_launch {
                                 log_markdown(&format!(
@@ -821,12 +757,10 @@ pub fn spawn_capture_engine(
                                 ));
                             }
                         }
-                    }
-                }
 
                 if cancel_token.load(Ordering::Relaxed) {
                     log_markdown(&format!("[HLAE] Cancelled by user after {:.1}s", start_time.elapsed().as_secs_f32()));
-                    std::process::Command::new("taskkill").args(&["/F", "/IM", "hl.exe"]).output().ok();
+                    std::process::Command::new("taskkill").args(["/F", "/IM", "hl.exe"]).output().ok();
                     wait_for_hl_exe_to_exit(&mut sys);
                     break;
                 }
@@ -835,9 +769,9 @@ pub fn spawn_capture_engine(
                 // never started playing, which produces no markers to count
                 // from at all. Both mean the same thing: the game is alive and
                 // the batch is not advancing.
-                if obs_mode {
-                    if let Some(since) = last_marker_at.or(hl_first_seen) {
-                        if hl_alive && since.elapsed() > marker_stall_deadline(longest_marker_gap) {
+                if obs_mode
+                    && let Some(since) = last_marker_at.or(hl_first_seen)
+                        && hl_alive && since.elapsed() > marker_stall_deadline(longest_marker_gap) {
                             let never_started = last_marker_at.is_none();
                             log_markdown(&format!(
                                 "[HLAE] No console markers for {:.0}s with hl.exe still running — treating the batch as stalled. {}",
@@ -853,19 +787,17 @@ pub fn spawn_capture_engine(
                             } else {
                                 "the batch stopped progressing while hl.exe was still running — no console markers arrived for several minutes"
                             });
-                            std::process::Command::new("taskkill").args(&["/F", "/IM", "hl.exe"]).output().ok();
+                            std::process::Command::new("taskkill").args(["/F", "/IM", "hl.exe"]).output().ok();
                             wait_for_hl_exe_to_exit(&mut sys);
                             break;
                         }
-                    }
-                }
                 // OBS gone for good, after a reconnect was already tried.
                 // Continuing would play the demo to the end capturing nothing
                 // and then report the batch as finished.
                 if obs_session.as_ref().is_some_and(|s| s.is_dead()) {
                     log_markdown("[HLAE] OBS is unreachable and could not be reconnected — aborting rather than finishing the batch with nothing recorded.");
                     failure_reason = Some("lost contact with OBS mid-batch and could not reconnect");
-                    std::process::Command::new("taskkill").args(&["/F", "/IM", "hl.exe"]).output().ok();
+                    std::process::Command::new("taskkill").args(["/F", "/IM", "hl.exe"]).output().ok();
                     wait_for_hl_exe_to_exit(&mut sys);
                     break;
                 }
@@ -888,7 +820,7 @@ pub fn spawn_capture_engine(
                         start_time.elapsed().as_secs_f32(),
                         via
                     ));
-                    std::process::Command::new("taskkill").args(&["/F", "/IM", "hl.exe"]).output().ok();
+                    std::process::Command::new("taskkill").args(["/F", "/IM", "hl.exe"]).output().ok();
                     wait_for_hl_exe_to_exit(&mut sys);
                     break;
                 }

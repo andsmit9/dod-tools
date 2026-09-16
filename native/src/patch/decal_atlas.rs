@@ -351,7 +351,7 @@ mod tests {
         let seed = scratch("seed_shipped");
         merge_and_save(&seed, &[], &key(), &[[800.0, 800.0, 800.0]]);
 
-        let (merged, stats) = merge_and_save(&user, &[seed.clone()], &key(), &[[0.0, 0.0, 0.0]]);
+        let (merged, stats) = merge_and_save(&user, std::slice::from_ref(&seed), &key(), &[[0.0, 0.0, 0.0]]);
         assert_eq!(stats.added, 1, "only the user's own coordinate is recorded");
         assert_eq!(merged.len(), 2, "but both are available to the flush");
         assert_eq!(load(&user, &key()).len(), 1, "the seed must not leak into the user store");

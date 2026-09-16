@@ -253,13 +253,11 @@ pub fn settings_path() -> PathBuf {
 impl AppSettings {
     pub fn load_or_default() -> Self {
         let path = settings_path();
-        if path.exists() {
-            if let Ok(content) = fs::read_to_string(&path) {
-                if let Ok(settings) = serde_json::from_str::<AppSettings>(&content) {
+        if path.exists()
+            && let Ok(content) = fs::read_to_string(&path)
+                && let Ok(settings) = serde_json::from_str::<AppSettings>(&content) {
                     return settings;
                 }
-            }
-        }
         Self::default()
     }
 

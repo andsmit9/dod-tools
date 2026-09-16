@@ -132,8 +132,8 @@ pub async fn run_render_job(
         ));
         return;
     }
-    if let Some(wav) = &wav_file {
-        if !wav.exists() {
+    if let Some(wav) = &wav_file
+        && !wav.exists() {
             let _ = tx.send(RenderUpdate::Finished(
                 job_id.clone(),
                 false,
@@ -141,7 +141,6 @@ pub async fn run_render_job(
             ));
             return;
         }
-    }
     // The alpha stream carries no sound of its own, so a HUD/alpha composite
     // always needs a separate wav — an OBS take's muxed-in audio can't cover it.
     if is_hud && wav_file.is_none() {
@@ -545,11 +544,10 @@ pub async fn run_render_job(
             if n == 0 {
                 break;
             }
-            if let Ok(s) = std::str::from_utf8(&buf[..n]) {
-                if let Ok(mut log) = stderr_log_clone.lock() {
+            if let Ok(s) = std::str::from_utf8(&buf[..n])
+                && let Ok(mut log) = stderr_log_clone.lock() {
                     log.push_str(s);
                 }
-            }
         }
     });
 
@@ -593,12 +591,12 @@ pub async fn run_render_job(
 
                             match key {
                                 "frame" => {
-                                    if let Ok(current_frame) = val.parse::<usize>() {
-                                        let total_frames = clip.frame_count;
-                                        if total_frames > 0 {
-                                            let percent = std::cmp::min(100, (current_frame * 100) / total_frames) as u32;
-                                            let _ = tx.send(RenderUpdate::Progress(job_id.clone(), percent));
-                                        }
+                                    if let Ok(current_frame) = val.parse::<usize>()
+                                        && let Some(ratio) =
+                                            (current_frame * 100).checked_div(clip.frame_count)
+                                    {
+                                        let percent = std::cmp::min(100, ratio) as u32;
+                                        let _ = tx.send(RenderUpdate::Progress(job_id.clone(), percent));
                                     }
                                 }
                                 "fps" => {
