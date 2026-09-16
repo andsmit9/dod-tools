@@ -77,6 +77,20 @@ made *after* a trimmed map is deployed. See #207 for the original problem and
 implementation is `native/src/obs/client.rs`, which is where the pinned
 handshake tests live — don't treat the copy here as authoritative.
 
+### Performance
+
+| Probe | Question it answers |
+| --- | --- |
+| `scan_mem_probe` | What does parsing demos N-at-a-time cost in peak memory? |
+
+`scan_mem_probe` is what set `SCAN_CONCURRENCY` in
+`capture_manager::scan_directory_impl`. It mirrors that loop's Phase 2 exactly,
+so its numbers are the real thing rather than a model, and reads peak working
+set from the OS rather than sampling. Over a 45-demo corpus (3.2GB, 72MB mean):
+one worker peaks at 1529 MB, two at 2414 MB, four at 4574 MB, eight at 9157 MB
+-- and eight is *slower* than four, which is what says the ceiling is memory
+pressure rather than CPU.
+
 ### Hashing
 
 | Probe | Question it answers |
