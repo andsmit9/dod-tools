@@ -8,8 +8,30 @@
 # workspace member — meant the bit-level demo reader/writer had no test or lint
 # coverage at all. Rewritten 2026-09-10.
 #
-# Upstream authorship and licence are unchanged; see LICENSE and the repository
-# link below.
+# Upstream authorship is unchanged; see the repository link below.
+#
+# LICENCE: LGPL-3.0, matching upstream. The vendored source is crates.io `dem`
+# v0.2.3, which `.cargo_vcs_info.json` records as upstream commit 0bddfd5
+# ("bump version", 2025-03-19). That commit is a direct ancestor of e72684f
+# ("change license from GPLv3 to LGPLv3", 2026-05-10) -- four commits later,
+# with nothing between them on another branch -- so the relicence covers this
+# lineage, and LICENSE now carries upstream's LGPL-3.0 text taken from that
+# commit. It previously carried the older GPL-3.0 text, which is what upstream
+# shipped at the time this crate was vendored.
+#
+# Stated as an SPDX `license` field rather than upstream's `license-file`, so
+# automated licence scanning of a dependency tree resolves it instead of
+# reporting "unknown". Cargo warns on every build if both are set, and its own
+# guidance is that `license` wins whenever the terms are expressible as a
+# standard SPDX id, which LGPL-3.0 is. LICENSE itself stays in this directory
+# and is still the authoritative text; it is just no longer named here.
+#
+# `-only`, not `-or-later`: upstream states no "or (at your option) any later
+# version" anywhere -- no per-file headers, and only a bare LICENSE -- and the
+# bare licence text alone means `-only`. That is also the safe direction to be
+# wrong in: understating the permissions granted to us cannot become a
+# violation, whereas claiming `-or-later` against an author who meant `-only`
+# would assert rights we were never given.
 
 [package]
 name = "dem"
@@ -23,7 +45,7 @@ keywords = [
     "goldsource",
     "demo",
 ]
-license-file = "LICENSE"
+license = "LGPL-3.0-only"
 repository = "https://github.com/khanghugo/dem"
 
 [lib]
