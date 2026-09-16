@@ -19,11 +19,19 @@
 # commit. It previously carried the older GPL-3.0 text, which is what upstream
 # shipped at the time this crate was vendored.
 #
-# `license-file` is deliberately kept instead of an SPDX `license` field:
-# choosing between `LGPL-3.0-only` and `LGPL-3.0-or-later` would be an
-# assertion about upstream's intent that upstream has not made itself (it sets
-# only `license-file`, and adds no per-file licence headers). The file is the
-# honest statement of terms.
+# Stated as an SPDX `license` field rather than upstream's `license-file`, so
+# automated licence scanning of a dependency tree resolves it instead of
+# reporting "unknown". Cargo warns on every build if both are set, and its own
+# guidance is that `license` wins whenever the terms are expressible as a
+# standard SPDX id, which LGPL-3.0 is. LICENSE itself stays in this directory
+# and is still the authoritative text; it is just no longer named here.
+#
+# `-only`, not `-or-later`: upstream states no "or (at your option) any later
+# version" anywhere -- no per-file headers, and only a bare LICENSE -- and the
+# bare licence text alone means `-only`. That is also the safe direction to be
+# wrong in: understating the permissions granted to us cannot become a
+# violation, whereas claiming `-or-later` against an author who meant `-only`
+# would assert rights we were never given.
 
 [package]
 name = "dem"
@@ -37,7 +45,7 @@ keywords = [
     "goldsource",
     "demo",
 ]
-license-file = "LICENSE"
+license = "LGPL-3.0-only"
 repository = "https://github.com/khanghugo/dem"
 
 [lib]
