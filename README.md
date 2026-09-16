@@ -84,9 +84,13 @@ still present, so the patch is still required.
 
 ## Licensing
 
-This project is MIT (see `LICENSE`), with one exception: **`dem-patch/` is
-LGPL-3.0**, not MIT. It is a vendored fork of upstream `dem` and keeps
-upstream's terms; `dem-patch/LICENSE` is the authority for that directory.
+This project is MIT (see `LICENSE`). The copyright line there is Charles
+D'Angelo's, from [cgdangelo/dod-tools](https://github.com/cgdangelo/dod-tools),
+which this is a fork of — MIT requires that notice be kept, so it stays.
+
+One directory is **not** MIT: **`dem-patch/` is LGPL-3.0**. It is a vendored
+fork of upstream [`dem`](https://github.com/khanghugo/dem) and keeps upstream's
+terms; `dem-patch/LICENSE` is the authority for that directory.
 
 Because `dem-patch/` is linked into every binary this workspace builds, anyone
 redistributing those binaries is redistributing LGPL-3.0 code and takes on that
