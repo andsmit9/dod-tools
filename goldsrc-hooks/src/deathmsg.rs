@@ -456,7 +456,20 @@ fn fake(killer: i32, victim: i32, weapon: i32) -> Result<(), String> {
     // Straight to client.dll's own handler, deliberately bypassing our hook:
     // a message you asked for by hand should not then be filtered by the block
     // list, and the engine is not involved in dispatching it either way.
+    //
+    // Bracketed by log lines because this is the one place the DLL hands
+    // control to game code that was never written to be called from here: if
+    // the game dies inside it, the missing "returned" line is what says so, and
+    // says it even though the process is gone before anything else can report.
+    unsafe {
+        crate::debug::report(&format!(
+            "deathmsg: fake -- calling client.dll __MsgFunc_DeathMsg at {:#x} with killer={killer} victim={victim} weapon={weapon} ({})",
+            original as usize,
+            WEAPON_SPRITES.get(weapon as usize).copied().unwrap_or("?"),
+        ))
+    };
     unsafe { original(name.as_ptr(), payload.len() as i32, payload.as_mut_ptr() as *mut c_void) };
+    unsafe { crate::debug::report("deathmsg: fake -- returned cleanly") };
     Ok(())
 }
 

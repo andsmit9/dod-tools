@@ -39,6 +39,7 @@
 
 mod anim_fix;
 mod commands;
+mod crash;
 mod deathmsg;
 mod debug;
 mod engine;
@@ -110,6 +111,11 @@ unsafe extern "system" fn worker_thread(_lp_param: *mut std::ffi::c_void) -> u32
             anim_fix::level_description(anim_fix::level()),
         ))
     };
+
+    // Before anything else hooks anything: GoldSrc swallows its own
+    // unhandled exceptions and exits without a dump or an event-log entry,
+    // so without this a crash in an engine-thread callback is untraceable.
+    crash::install();
 
     // Registered before install() so there's no window in which Initialize
     // could fire before the callback exists.

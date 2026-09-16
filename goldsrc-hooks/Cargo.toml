@@ -29,4 +29,7 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Console",
     "Win32_Security",
     "Win32_System_Diagnostics_Debug",
+    # AddVectoredExceptionHandler and EXCEPTION_POINTERS live behind this one
+    # rather than the Debug feature that names them -- see src/crash.rs.
+    "Win32_System_Kernel",
 ] }

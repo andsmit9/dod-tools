@@ -31,7 +31,9 @@ for the `i686-pc-windows-msvc` target, not the default 64-bit one:
 
 ```
 rustup target add i686-pc-windows-msvc   # one-time
-cargo build -p goldsrc-hooks --release --target i686-pc-windows-msvc --bins
+# --lib matters: the injector is a standalone binary that does not depend on
+# the cdylib, so --bins alone silently leaves a stale DLL in place.
+cargo build -p goldsrc-hooks --release --target i686-pc-windows-msvc --lib --bins
 ```
 
 Produces `target/i686-pc-windows-msvc/release/dodtoolsHookGoldSrc.dll` and
