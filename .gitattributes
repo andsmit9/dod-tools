@@ -38,9 +38,6 @@ localizations/dod_english.txt     binary
 localizations/gameui_english.txt  binary
 localizations/valve_english.txt   binary
 
-# Also UTF-16LE. Unreferenced sample output; see #243.
-assets/example_report.md          binary
-
 # ── Binary assets ────────────────────────────────────────────────────────────
 *.png    binary
 *.ico    binary
