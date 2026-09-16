@@ -379,11 +379,14 @@ fn viewmodel_match_inner(viewmodel_name: &str, spectated: &ClEntityS) -> Option<
     Some(matched)
 }
 
-static SEQUENCE_CACHE: Mutex<Option<HashMap<usize, Vec<String>>>> = Mutex::new(None);
+/// One model's sequences: the label, and how long it runs in seconds.
+type SequenceInfo = Vec<(String, f64)>;
+
+static SEQUENCE_CACHE: Mutex<Option<HashMap<usize, SequenceInfo>>> = Mutex::new(None);
 
 /// Returns every sequence label baked into `model`, cached by the model
 /// pointer's address (stable for the life of a precached model).
-fn model_sequence_strings(model: *mut ModelSPartial) -> Vec<String> {
+fn model_sequence_info(model: *mut ModelSPartial) -> Vec<(String, f64)> {
     let key = model as usize;
     let mut cache = SEQUENCE_CACHE.lock().unwrap();
     let cache = cache.get_or_insert_with(HashMap::new);
@@ -420,11 +423,33 @@ fn model_sequence_strings(model: *mut ModelSPartial) -> Vec<String> {
     for i in 0..numseq {
         let entry = unsafe { base.add(seqindex as usize + i as usize * size_of::<StudioSeqDescPartial>()) }
             as *const StudioSeqDescPartial;
-        labels.push(unsafe { (*entry).label_str() }.into_owned());
+        let (fps, frames) = unsafe { ((*entry).fps, (*entry).numframes) };
+        // A sequence with a nonsense rate or frame count gets zero rather than
+        // an absurd duration -- callers treat zero as "don't know".
+        let duration = if fps > 0.0 && (0..=4096).contains(&frames) {
+            f64::from(frames) / f64::from(fps)
+        } else {
+            0.0
+        };
+        labels.push((unsafe { (*entry).label_str() }.into_owned(), duration));
     }
 
     cache.insert(key, labels.clone());
     labels
+}
+
+/// How long one of a model's sequences runs, in seconds. Zero when the model
+/// or index cannot be read, or the header's numbers are not credible.
+fn model_sequence_duration(model: *mut ModelSPartial, sequence: i32) -> f64 {
+    if sequence < 0 {
+        return 0.0;
+    }
+    model_sequence_info(model).get(sequence as usize).map(|(_, d)| *d).unwrap_or(0.0)
+}
+
+/// Just the labels, for everything that only needs to name a sequence.
+fn model_sequence_strings(model: *mut ModelSPartial) -> Vec<String> {
+    model_sequence_info(model).into_iter().map(|(label, _)| label).collect()
 }
 
 fn sequence_family(label: &str) -> Option<DeployState> {
@@ -555,11 +580,12 @@ fn play_viewmodel_animation(
     if played % ANIMATION_SUMMARY_EVERY == 0 {
         unsafe { crate::debug::report(&format!("anim_fix: {played} animations corrected so far")) };
     }
+    let played_label = model_sequence_strings(viewmodel)
+        .get(sequence as usize)
+        .cloned()
+        .unwrap_or_else(|| "<unknown>".into());
     {
-        let label = model_sequence_strings(viewmodel)
-            .get(sequence as usize)
-            .cloned()
-            .unwrap_or_else(|| "<unknown>".into());
+        let label = &played_label;
         let family = match state {
             Some(DeployState::Up) => "bipod up",
             Some(DeployState::Down) => "bipod down",
@@ -572,7 +598,54 @@ fn play_viewmodel_animation(
         };
     }
 
+    // A grenade throw empties the hand and leaves it that way. `throw` is two
+    // frames -- 0.050s on `v_stick` -- so the viewmodel sits on that final,
+    // empty pose for as long as nothing else plays. Measured against a real
+    // HLTV capture that was 3.5 seconds, because the replicated `weaponmodel`
+    // went on insisting the player still held the grenade for four seconds
+    // after he threw it. His own client had drawn the next weapon 1.25s in.
+    //
+    // So schedule a re-draw for the moment the throw finishes. What gets drawn
+    // is whatever the replicated state then says is in hand, which is the only
+    // answer available -- it is behind the player's own client, but an empty
+    // hand for four seconds is further from the truth than a late draw.
+    if is_throw_label(&played_label) {
+        let at = engine::client_time() + model_sequence_duration(viewmodel, sequence).max(0.05);
+        REDRAW_AFTER.store(at.to_bits(), Ordering::Relaxed);
+    }
+
     unsafe { (engfuncs.pfn_weapon_anim)(sequence, 0) };
+}
+
+/// Whether a viewmodel sequence is the one that ends with the hand empty.
+///
+/// Only the grenade families have this shape: every other attack animation
+/// returns the weapon to a pose that still holds it.
+fn is_throw_label(label: &str) -> bool {
+    let l = label.to_ascii_lowercase();
+    l == "throw" || l == "exploding_throw"
+}
+
+/// When to draw whatever is in hand after a throw empties it, as demo-time
+/// bits, or zero for "nothing pending".
+static REDRAW_AFTER: AtomicU64 = AtomicU64::new(0);
+
+/// Plays the draw for the weapon currently in view if a throw has finished.
+///
+/// Called every frame. Deliberately does nothing unless a throw actually
+/// scheduled one, so the ordinary path is a single relaxed load.
+fn redraw_after_throw_if_due(now: f64, state: Option<DeployState>, viewmodel: *mut ModelSPartial) {
+    let due = f64::from_bits(REDRAW_AFTER.load(Ordering::Relaxed));
+    if due == 0.0 || now < due {
+        return;
+    }
+    REDRAW_AFTER.store(0, Ordering::Relaxed);
+    play_viewmodel_animation(
+        animation_lookup_sequence("draw", state, viewmodel),
+        "throw finished, drawing what is now in hand",
+        state,
+        viewmodel,
+    );
 }
 
 // What `apply()` last saw, published for `on_weapon_fired`, which runs from
@@ -1076,9 +1149,17 @@ pub fn apply() {
         }
 
         if viewmodel_changed {
+            // A real switch draws anyway, so drop any re-draw a throw had
+            // queued -- otherwise it would fire again a moment later and
+            // restart the animation this line just began.
+            REDRAW_AFTER.store(0, Ordering::Relaxed);
             play_viewmodel_animation(animation_lookup_sequence("draw", state, viewmodel_model), "weapon changed", state, viewmodel_model);
         }
     }
+
+    // Last, so anything this frame genuinely wanted to play has already had
+    // its say: a throw's hand stays empty until something draws into it.
+    redraw_after_throw_if_due(engine::client_time(), state, viewmodel_model);
 
     PREVIOUS_DEPLOY_STATE.store(deploy_state_to_i32(state), Ordering::Relaxed);
     PREVIOUS_SEQUENCE.store(spectated.curstate.sequence, Ordering::Relaxed);
@@ -1331,6 +1412,42 @@ mod tests {
 
         // A genuine switch afterwards still draws.
         assert!(viewmodel_changed_to_a_new_weapon(a, 1.0));
+    }
+
+    /// Only the grenade families end with an empty hand. Getting this wrong in
+    /// the permissive direction would queue a re-draw after every gunshot,
+    /// restarting the weapon animation mid-burst.
+    #[test]
+    fn only_a_grenade_throw_counts_as_emptying_the_hand() {
+        for label in ["throw", "exploding_throw", "THROW"] {
+            assert!(is_throw_label(label), "{label}");
+        }
+        for label in [
+            "shoot", "shoot1", "up_shoot", "launch", "fire", "slash1", "draw", "reload", "idle",
+            // Near misses that must not match.
+            "throw_empty", "pinpull", "holster",
+        ] {
+            assert!(!is_throw_label(label), "{label}");
+        }
+    }
+
+    /// The re-draw is scheduled by a throw and consumed once, when its time
+    /// comes -- not every frame afterwards, which would restart the draw
+    /// animation continuously.
+    #[test]
+    fn a_queued_redraw_fires_once_and_only_when_due() {
+        let vm = std::ptr::without_provenance_mut::<ModelSPartial>(1);
+        REDRAW_AFTER.store(10.0f64.to_bits(), Ordering::Relaxed);
+
+        redraw_after_throw_if_due(9.9, None, vm);
+        assert_ne!(REDRAW_AFTER.load(Ordering::Relaxed), 0, "not due yet");
+
+        redraw_after_throw_if_due(10.0, None, vm);
+        assert_eq!(REDRAW_AFTER.load(Ordering::Relaxed), 0, "consumed when due");
+
+        // And nothing pending means nothing happens, however late it gets.
+        redraw_after_throw_if_due(9999.0, None, vm);
+        assert_eq!(REDRAW_AFTER.load(Ordering::Relaxed), 0);
     }
 
     fn reset_settle_state() {

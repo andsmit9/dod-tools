@@ -326,7 +326,19 @@ const _: () = assert!(
 #[repr(C)]
 pub struct StudioSeqDescPartial {
     pub label: [u8; 32],
-    _rest: [u8; 176 - 32],
+    /// Playback rate, and the frame count at that rate -- together they give
+    /// the animation's real duration, which is how long a one-shot sequence
+    /// occupies the viewmodel before it sits on its final pose.
+    ///
+    /// Offsets verified against the shipped models rather than assumed:
+    /// `v_stick.mdl` reads back `draw` at 40fps/31 frames (0.775s), `pinpull`
+    /// at 30fps/26 (0.867s) and `throw` at 40fps/2 (0.050s), which are
+    /// sensible values in the right places. A wrong offset here would produce
+    /// garbage durations rather than failing loudly.
+    pub fps: f32,
+    _flags_activity_actweight_events: [u8; 20],
+    pub numframes: i32,
+    _rest: [u8; 176 - 60],
 }
 
 const _: () = assert!(size_of::<StudioSeqDescPartial>() == 176);
