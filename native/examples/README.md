@@ -54,6 +54,18 @@ binaries explicitly, so this cannot silently happen again.
 | `survey_decal_flush` | Corpus sweep: how many positions does each demo get? |
 | `verify_decal_pipeline` | Does a flushed demo come out with frame ordinals intact? |
 | `validate_bsp` | Does the BSP reader agree with coordinates the engine accepted? |
+| `map_entity_trim` | Which entities can a map lose to get under `MAX_PACKET_ENTITIES`? |
+
+`map_entity_trim` is the one here that writes a file rather than only reporting.
+It rewrites a `.bsp`'s entity lump to drop entities that never reach the wire,
+for maps that blow the pre-Anniversary `MAX_PACKET_ENTITIES` limit of 256.
+
+It cannot rescue a demo that is already broken. A demo's `SvcSpawnBaseline` is
+frozen at record time, so the map loaded during playback has no say in it --
+tested against the real `wsod25_grp3_h1_hltv.dem` at floors 235 and 215, both
+of which crash identically to the untrimmed map. This only helps recordings
+made *after* a trimmed map is deployed. See #207 for the original problem and
+#231 for the fix that actually addresses it.
 
 ### Capture backends
 
