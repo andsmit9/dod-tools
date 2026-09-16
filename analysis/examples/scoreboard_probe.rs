@@ -71,7 +71,7 @@ fn main() {
                             let parts: Vec<&str> =
                                 raw.trim_matches(|c| c == '\0' || c == '\\').split('\\').collect();
                             let f: HashMap<&str, &str> =
-                                parts.chunks_exact(2).map(|c| (c[0], c[1])).collect();
+                                parts.as_chunks::<2>().0.iter().map(|&[k, v]| (k, v)).collect();
                             if f.is_empty() || f.get("*hltv") == Some(&"1") {
                                 continue;
                             }
@@ -180,11 +180,10 @@ fn main() {
                                     let prev = area.and_then(|a| flag_owner.get(&a).cloned()).flatten();
                                     let is_break =
                                         prev.is_some() && prev.as_ref() != Some(&c.team);
-                                    if is_break {
-                                        if let Some(s) = slots.get_mut(&idx) {
+                                    if is_break
+                                        && let Some(s) = slots.get_mut(&idx) {
                                             s.cap_breaks += 1;
                                         }
-                                    }
                                     cap_events.push((
                                         frame_no,
                                         c.point_name.clone(),

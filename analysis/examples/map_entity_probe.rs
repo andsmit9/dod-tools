@@ -149,7 +149,7 @@ fn main() {
 
     // Per-entity detail, in entity-index order: this is what a strip-list is
     // written against.
-    println!("{:>5}  {:>5}  {:<34} {:>26}  {}", "ent", "mdlix", "model", "origin", "flags");
+    println!("{:>5}  {:>5}  {:<34} {:>26}  flags", "ent", "mdlix", "model", "origin");
     let mut ordered = snapshot.clone();
     ordered.sort_unstable();
     for idx in &ordered {

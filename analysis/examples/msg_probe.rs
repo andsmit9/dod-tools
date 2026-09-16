@@ -20,8 +20,8 @@ fn main() {
 
     for entry in &demo.directory.entries {
         for frame in &entry.frames {
-            if let FrameData::NetworkMessage(bt) = &frame.frame_data {
-                if let MessageData::Parsed(msgs) = &bt.1.messages {
+            if let FrameData::NetworkMessage(bt) = &frame.frame_data
+                && let MessageData::Parsed(msgs) = &bt.1.messages {
                     for m in msgs {
                         if let NetMessage::UserMessage(um) = m {
                             let mut n: Vec<u8> = um.name.clone();
@@ -35,7 +35,6 @@ fn main() {
                         }
                     }
                 }
-            }
         }
     }
 

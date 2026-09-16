@@ -57,7 +57,6 @@ html {
   --border-accent: #555555;
   --primary-accent: #2b5c8f;
   --primary-hover: #3772b0;
-  --success-color: #388e3c;
   --text-muted: #888888;
 }
 
@@ -108,11 +107,6 @@ body {
   color: #ffffff;
   font-size: 17px;
   white-space: nowrap;
-}
-
-.brand-sub {
-  color: var(--text-muted);
-  font-size: 11px;
 }
 
 
@@ -439,8 +433,8 @@ body {
   background: #1a1a1a;
 }
 
-/* egui Panel & Cards Styling */
-.egui-panel, .egui-card {
+/* egui Panel Styling */
+.egui-panel {
   background: var(--bg-panel);
   border: 1px solid var(--border-color);
   border-radius: 2px;
@@ -999,14 +993,6 @@ button.primary-btn:hover:not(:disabled) {
   max-height: 85vh;
   overflow-y: auto;
   background: var(--bg-panel);
-}
-
-.telemetry-data-box {
-  background: var(--bg-card);
-  padding: 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 2px;
-  margin-top: 4px;
 }
 
 /* Toast Container */

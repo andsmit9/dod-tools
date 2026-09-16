@@ -83,7 +83,7 @@ fn main() {
         for frame in &entry.frames {
             let debug_name = format!("{:?}", frame.frame_data);
             let frame_type = debug_name
-                .split(|c| c == '(' || c == '{' || c == ' ')
+                .split(['(', '{', ' '])
                 .next()
                 .unwrap_or("Unknown")
                 .to_string();
@@ -111,29 +111,26 @@ fn main() {
                         sound_events.push(snd_str);
                     }
                 }
-                FrameData::NetworkMessage(net_msg_box) => match &net_msg_box.1.messages {
-                    MessageData::Parsed(msgs) => {
-                        for msg in msgs {
-                            match msg {
-                                NetMessage::EngineMessage(eng_msg) => {
-                                    let eng_debug = format!("{:?}", eng_msg);
-                                    let eng_type = eng_debug
-                                        .split(|c| c == '(' || c == '{' || c == ' ')
-                                        .next()
-                                        .unwrap_or("Unknown")
-                                        .to_string();
-                                    *engine_message_counts.entry(eng_type).or_insert(0) += 1;
-                                }
-                                NetMessage::UserMessage(usr_msg) => {
-                                    let name = String::from_utf8_lossy(&usr_msg.name)
-                                        .trim_end_matches('\x00')
-                                        .to_string();
-                                    *user_message_counts.entry(name).or_insert(0) += 1;
-                                }
+                FrameData::NetworkMessage(net_msg_box) => if let MessageData::Parsed(msgs) = &net_msg_box.1.messages {
+                    for msg in msgs {
+                        match msg {
+                            NetMessage::EngineMessage(eng_msg) => {
+                                let eng_debug = format!("{:?}", eng_msg);
+                                let eng_type = eng_debug
+                                    .split(['(', '{', ' '])
+                                    .next()
+                                    .unwrap_or("Unknown")
+                                    .to_string();
+                                *engine_message_counts.entry(eng_type).or_insert(0) += 1;
+                            }
+                            NetMessage::UserMessage(usr_msg) => {
+                                let name = String::from_utf8_lossy(&usr_msg.name)
+                                    .trim_end_matches('\x00')
+                                    .to_string();
+                                *user_message_counts.entry(name).or_insert(0) += 1;
                             }
                         }
                     }
-                    _ => {}
                 },
                 _ => {}
             }
@@ -183,10 +180,9 @@ fn main() {
             "sound_events": sound_events,
         });
 
-        if let Ok(json_str) = serde_json::to_string_pretty(&json_data) {
-            if fs::write(&json_path, json_str).is_ok() {
+        if let Ok(json_str) = serde_json::to_string_pretty(&json_data)
+            && fs::write(&json_path, json_str).is_ok() {
                 println!("\nDetailed summary written to: {}", json_path.display());
             }
-        }
     }
 }

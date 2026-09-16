@@ -418,16 +418,14 @@ impl ObsSession {
         self.end_block();
         let mut guard = self.client.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(client) = guard.as_mut() {
-            if let Some(scene) = self.previous_scene.take() {
-                if !scene.is_empty() {
+            if let Some(scene) = self.previous_scene.take()
+                && !scene.is_empty() {
                     let _ = client.set_scene(&scene);
                 }
-            }
-            if let Some(profile) = self.previous_profile.take() {
-                if !profile.is_empty() {
+            if let Some(profile) = self.previous_profile.take()
+                && !profile.is_empty() {
                     let _ = client.set_profile(&profile);
                 }
-            }
         }
         *guard = None;
     }

@@ -49,14 +49,13 @@ fn resolve_ffmpeg(override_path: Option<&String>) -> PathBuf {
             return pb;
         }
     }
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(parent) = exe.parent() {
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(parent) = exe.parent() {
             let local = parent.join("local/tools/ffmpeg.exe");
             if local.exists() {
                 return local;
             }
         }
-    }
     PathBuf::from("ffmpeg")
 }
 
@@ -227,11 +226,10 @@ fn write_autosave(render_session: &Arc<Mutex<Option<RenderSessionData>>>, jobs: 
             name: j.clip.base_name.clone(),
         }).collect(),
     };
-    if let Ok(json) = serde_json::to_string_pretty(&session) {
-        if let Err(e) = std::fs::write(autosave_path(), json) {
+    if let Ok(json) = serde_json::to_string_pretty(&session)
+        && let Err(e) = std::fs::write(autosave_path(), json) {
             log::warn!("[render_autosave] Failed to write lockfile: {}", e);
         }
-    }
     *render_session.lock().unwrap() = Some(session);
 }
 
@@ -333,21 +331,19 @@ fn apply_render_update(
                 ));
             }
             // Autosave only tracks success — matches dev's ui.rs exactly.
-            if success {
-                if let Some(session) = render_session.lock().unwrap().as_mut() {
-                    if let Ok(idx) = id.parse::<usize>() {
-                        if let Some(rj) = session.jobs.get_mut(idx) {
+            if success
+                && let Some(session) = render_session.lock().unwrap().as_mut() {
+                    if let Ok(idx) = id.parse::<usize>()
+                        && let Some(rj) = session.jobs.get_mut(idx) {
                             rj.status = AutosaveJobStatus::Completed;
                             if let Some((_, _, _, output_path)) = &just_finished {
                                 rj.output_path = output_path.clone();
                             }
                         }
-                    }
                     if let Ok(json) = serde_json::to_string_pretty(session) {
                         let _ = std::fs::write(autosave_path(), json);
                     }
                 }
-            }
         }
     }
 }

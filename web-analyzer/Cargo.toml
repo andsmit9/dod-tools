@@ -13,6 +13,9 @@ serde-wasm-bindgen = "0.6.5"
 # Pinned exactly: the deploy workflow installs a matching wasm-bindgen-cli
 # version to post-process the .wasm build, and a mismatched CLI/crate pair
 # fails at that step. Bump both together.
-wasm-bindgen = "=0.2.126"
-js-sys = "0.3.77"
-console_error_panic_hook = "0.1.7"
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+console_error_panic_hook = { workspace = true }
+
+[lints]
+workspace = true

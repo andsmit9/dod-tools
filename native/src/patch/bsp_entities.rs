@@ -187,7 +187,7 @@ pub fn rewrite_entity_lump(bytes: &[u8], entity_text: &str) -> Result<Vec<u8>, S
 
     let mut new_spans = [(0usize, 0usize); LUMP_COUNT];
     for index in order {
-        while out.len() % 4 != 0 {
+        while !out.len().is_multiple_of(4) {
             out.push(0);
         }
         let offset = out.len();
@@ -248,7 +248,7 @@ mod tests {
         out[0..4].copy_from_slice(&30i32.to_le_bytes());
         let mut spans = Vec::new();
         for payload in &payloads {
-            while out.len() % 4 != 0 {
+            while !out.len().is_multiple_of(4) {
                 out.push(0);
             }
             spans.push((out.len(), payload.len()));

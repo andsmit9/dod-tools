@@ -111,7 +111,7 @@ pub fn decal_texture_histogram(demo_bytes: &[u8]) -> Result<Vec<(u8, usize)>, St
     }
 
     let mut out: Vec<(u8, usize)> = counts.into_iter().collect();
-    out.sort_by(|a, b| b.1.cmp(&a.1));
+    out.sort_by_key(|&(_, count)| std::cmp::Reverse(count));
     Ok(out)
 }
 
@@ -824,11 +824,10 @@ fn choose_targets(
     let mut scored: Vec<(f32, Target)> = Vec::new();
 
     for axis in 0..3 {
-        if let Some(forced) = opts.axis {
-            if axis != forced {
+        if let Some(forced) = opts.axis
+            && axis != forced {
                 continue;
             }
-        }
         let values: Vec<f32> = harvested.iter().map(|p| p[axis]).collect();
 
         for (value, idxs) in cluster(&values, opts.plane_tolerance) {
@@ -870,11 +869,10 @@ fn choose_targets(
 
                 let anchor = target.anchor();
 
-                if let Some(centre) = region {
-                    if distance(&anchor, &centre) > opts.near_radius {
+                if let Some(centre) = region
+                    && distance(&anchor, &centre) > opts.near_radius {
                         continue;
                     }
-                }
 
                 let (closest, dwell) = approach(&anchor, cameras, opts.require_approach);
                 // No occlusion test exists here, so "the camera pointed this
@@ -1156,11 +1154,10 @@ fn collect_cameras(demo: &dem::types::Demo) -> Vec<CameraSample> {
 
             if let MessageData::Parsed(messages) = &net_msg_box.1.messages {
                 for msg in messages {
-                    if let NetMessage::EngineMessage(eng) = msg {
-                        if let EngineMessage::SvcTime(t) = eng.as_ref() {
+                    if let NetMessage::EngineMessage(eng) = msg
+                        && let EngineMessage::SvcTime(t) = eng.as_ref() {
                             svc_time = t.time;
                         }
-                    }
                 }
             }
 
@@ -1174,7 +1171,7 @@ fn collect_cameras(demo: &dem::types::Demo) -> Vec<CameraSample> {
                 continue;
             }
             stride += 1;
-            if stride % 4 != 0 {
+            if !stride.is_multiple_of(4) {
                 continue;
             }
             out.push(CameraSample {
@@ -1480,8 +1477,8 @@ pub fn probe_decal_offsets(
     let mut all_positions: Vec<([f32; 3], u8)> = Vec::new();
 
     for target in targets.iter_mut() {
-        if opts.shift_right != 0.0 {
-            if let Some(dir) = rightward_in_plane(target, &cameras, opts) {
+        if opts.shift_right != 0.0
+            && let Some(dir) = rightward_in_plane(target, &cameras, opts) {
                 let (col, row) = (target.col_axis, target.row_axis);
                 let (dc, dr) = (dir[col] * opts.shift_right, dir[row] * opts.shift_right);
                 for c in target.columns.iter_mut() {
@@ -1489,7 +1486,6 @@ pub fn probe_decal_offsets(
                 }
                 target.row_center += dr;
             }
-        }
         let target = &*target;
         let anchor = target.anchor();
         let outward = outward_sign(target, &anchor, &cameras);
@@ -1595,18 +1591,7 @@ pub fn probe_decal_offsets(
     let eligible: Vec<(usize, usize, i32)> = frame_ordinals(&demo)
         .into_iter()
         .filter(|&(entry_idx, frame_idx, ordinal)| {
-            ordinal > floor
-                && demo.directory.entries[entry_idx]
-                    .frames
-                    .get(frame_idx)
-                    .map(|frame| match &frame.frame_data {
-                        FrameData::NetworkMessage(b) => {
-                            matches!(b.1.messages, MessageData::Parsed(_))
-                                && b.1.message_length < 1024
-                        }
-                        _ => false,
-                    })
-                    .unwrap_or(false)
+            ordinal > floor && crate::patch::is_injectable_frame(&demo, entry_idx, frame_idx)
         })
         .collect();
 
@@ -1953,11 +1938,10 @@ pub fn camera_at_time(demo_bytes: &[u8], svc_time: f32) -> Result<CameraView, St
             };
             if let MessageData::Parsed(messages) = &net_msg_box.1.messages {
                 for msg in messages {
-                    if let NetMessage::EngineMessage(eng) = msg {
-                        if let EngineMessage::SvcTime(t) = eng.as_ref() {
+                    if let NetMessage::EngineMessage(eng) = msg
+                        && let EngineMessage::SvcTime(t) = eng.as_ref() {
                             now = t.time;
                         }
-                    }
                 }
             }
             let rp = &net_msg_box.1.info.refparams;
@@ -2054,11 +2038,10 @@ pub fn best_view_for(
             };
             if let MessageData::Parsed(messages) = &net_msg_box.1.messages {
                 for msg in messages {
-                    if let NetMessage::EngineMessage(eng) = msg {
-                        if let EngineMessage::SvcTime(t) = eng.as_ref() {
+                    if let NetMessage::EngineMessage(eng) = msg
+                        && let EngineMessage::SvcTime(t) = eng.as_ref() {
                             now = t.time;
                         }
-                    }
                 }
             }
             let rp = &net_msg_box.1.info.refparams;

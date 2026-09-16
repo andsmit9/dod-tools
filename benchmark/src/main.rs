@@ -311,7 +311,7 @@ fn collect(dir: &PathBuf, out: &mut Vec<PathBuf>) {
             let p = entry.path();
             if p.is_dir() {
                 collect(&p, out);
-            } else if p.extension().map_or(false, |e| e == "dem") {
+            } else if p.extension().is_some_and(|e| e == "dem") {
                 out.push(p);
             }
         }

@@ -338,11 +338,10 @@ impl Bsp {
         let Some(face) = self.faces.get(face_index) else {
             return false;
         };
-        if let Some(ti) = self.texinfo.get(face.texinfo.max(0) as usize) {
-            if ti.flags & TEX_SPECIAL != 0 {
+        if let Some(ti) = self.texinfo.get(face.texinfo.max(0) as usize)
+            && ti.flags & TEX_SPECIAL != 0 {
                 return false;
             }
-        }
         match self.texture_name(face_index) {
             Some(name) => {
                 let n = name.to_ascii_lowercase();
@@ -460,11 +459,10 @@ impl Bsp {
     pub fn nearest_face(&self, p: &[f32; 3], tolerance: f32) -> Option<(usize, f32)> {
         let mut best: Option<(usize, f32)> = None;
         for i in self.world_faces() {
-            if let Some(d) = self.point_on_face(i, p, tolerance) {
-                if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+            if let Some(d) = self.point_on_face(i, p, tolerance)
+                && best.map(|(_, bd)| d < bd).unwrap_or(true) {
                     best = Some((i, d));
                 }
-            }
         }
         best
     }

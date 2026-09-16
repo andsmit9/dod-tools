@@ -1,6 +1,49 @@
-# Pins line-ending policy explicitly instead of leaving git to re-guess it
-# every status check under core.autocrlf — the guess can false-positive a
-# byte-identical file as "modified" (seen repeatedly on
-# desktop-studio/src-tauri/Cargo.toml). All TOML in this repo is already
-# consistently LF-stored; this just makes that official.
+# Line-ending and content-type policy for the whole tree.
+#
+# Pins the policy explicitly instead of leaving git to re-guess it every status
+# check under core.autocrlf — the guess can false-positive a byte-identical
+# file as "modified" (seen repeatedly on desktop-studio/src-tauri/Cargo.toml).
+#
+# Every tracked text file in this repo is already stored LF-clean in the index,
+# so the catch-all below codifies what is already true rather than rewriting
+# anything: `git add --renormalize .` stages nothing. It changes one thing only
+# — a checkout now writes LF into the working tree instead of CRLF, whatever
+# the contributor's core.autocrlf says.
+#
+# The reason it is worth having: #211 rewrote dem-patch/src/lib.rs wholesale to
+# CRLF, and combined with two raw NUL bytes it also introduced, git reclassified
+# the file as binary. The diff became unreviewable ("Binary files differ") and
+# the merge became a conflict with no markers written into the file, since git
+# will not attempt a textual merge on a binary path. The rule below prevents the
+# line-ending half of that outright.
+
+# `text=auto`, not a bare `text`: git still sniffs for NUL bytes and leaves
+# genuinely binary content alone. A forced `text` would corrupt the UTF-16
+# files listed further down, so do not "simplify" this to `* text eol=lf`.
+* text=auto eol=lf
+
+# Kept from the original policy. Redundant under the catch-all, but harmless,
+# and TOML is the case the false-positive was actually observed on.
 *.toml text eol=lf
+
+# ── Valve's own shipped game files ───────────────────────────────────────────
+# UTF-16LE with CRLF, exactly as the engine ships them, and parsed by
+# analysis::localization::read_to_string_lossy_utf16_or_utf8, which sniffs the
+# BOM. `text=auto` would already detect these as binary via their NUL bytes,
+# but state it explicitly rather than trusting a heuristic: a mangled one of
+# these fails at runtime with wrong strings, not at build time where it would
+# be noticed. localizations/dod_tools_english.txt is ours and is UTF-8 — it
+# deliberately does not appear here.
+localizations/dod_english.txt     binary
+localizations/gameui_english.txt  binary
+localizations/valve_english.txt   binary
+
+# ── Binary assets ────────────────────────────────────────────────────────────
+*.png    binary
+*.ico    binary
+*.icns   binary
+
+# GoldSrc demo files. dem-patch/src/tests/demotest.dem arrives with #211 and is
+# the first tracked one; listing the extension now means it can never be
+# line-ending-mangled on the way in.
+*.dem    binary

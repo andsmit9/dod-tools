@@ -241,18 +241,14 @@
                   <label for="config-capture-fps" data-str="CAPTURE_CONFIG.CAPTURE_FPS_LABEL" data-str-title="CAPTURE_CONFIG.CAPTURE_FPS_TITLE">Capture FPS:</label>
                   <input type="number" id="config-capture-fps" value="300" style="width: 80px;" data-str-title="CAPTURE_CONFIG.CAPTURE_FPS_TITLE" />
                 </div>
-                <div class="control-group">
-                  <input type="checkbox" id="config-separate-hud" />
-                  <label for="config-separate-hud" data-str="CAPTURE_CONFIG.SEPARATE_HUD_LABEL">Separate HUD</label>
-                </div>
                 <!-- A two-state choice rather than an option you switch on:
                      the alternative to video is not "no capture", it is a BMP
                      frame sequence. Naming both sides says that; a checkbox
                      labelled "Capture to video" implies the other state is off.
-                     Save Local Patched Copy and Add Condebug used to sit beside
-                     this; they now live in the Pipeline tab and must not be
-                     duplicated here — two elements sharing an id would leave
-                     querySelector wired to only the first one. -->
+                     Save Local Patched Copy used to sit beside this; it now
+                     lives in the Pipeline tab and must not be duplicated here —
+                     two elements sharing an id would leave querySelector wired
+                     to only the first one. -->
                 <!-- A three-way select rather than the old two-state toggle.
                      The modes are mutually exclusive — CaptureMode in the
                      backend makes that unrepresentable rather than validated —
@@ -439,10 +435,6 @@
                 <div class="control-group">
                   <input type="checkbox" id="config-save-local-patched" />
                   <label for="config-save-local-patched" data-str="CAPTURE_CONFIG.SAVE_LOCAL_PATCHED_LABEL">Save Local Patched Copy</label>
-                </div>
-                <div class="control-group">
-                  <input type="checkbox" id="config-add-condebug" checked />
-                  <label for="config-add-condebug" data-str="CAPTURE_CONFIG.ADD_CONDEBUG_LABEL">Add Condebug</label>
                 </div>
                 <div class="control-group">
                   <input type="checkbox" id="config-auto-clear-logs" />

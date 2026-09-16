@@ -47,8 +47,6 @@ pub struct CapturePayload {
     #[serde(default = "default_resolution_height")]
     pub resolution_height: i32,
     #[serde(default)]
-    pub separate_hud: bool,
-    #[serde(default)]
     pub ffmpeg_capture: bool,
     /// Codec id for direct-to-video capture; unknown ids fall back to the
     /// default rather than failing the batch.
@@ -67,8 +65,6 @@ pub struct CapturePayload {
     pub obs_password: String,
     #[serde(default)]
     pub save_local_patched_copy: bool,
-    #[serde(default = "default_add_condebug")]
-    pub add_condebug: bool,
     /// Highlight streaks to capture.
     pub streaks: Vec<SerializedStreak>,
     /// Pre-roll added before each streak (seconds). Converted → ticks at 100 Hz.
@@ -124,7 +120,6 @@ fn default_fast_forward_speed() -> f32 { 0.05 }
 fn default_resolution_width() -> i32 { 1280 }
 fn default_obs_capture_fps_payload() -> i32 { 120 }
 fn default_resolution_height() -> i32 { 720 }
-fn default_add_condebug() -> bool { true }
 
 /// One custom command row — serialisable across the Tauri IPC boundary.
 /// `relation` is a plain string ("Before" | "After") rather than
@@ -243,7 +238,6 @@ fn config_from_payload(payload: &CapturePayload) -> PatcherConfig {
     cfg.ffmpeg_override_path = payload.ffmpeg_override_path.clone();
     cfg.resolution_width = payload.resolution_width;
     cfg.resolution_height = payload.resolution_height;
-    cfg.separate_hud = payload.separate_hud;
     cfg.ffmpeg_capture = payload.ffmpeg_capture;
     cfg.ffmpeg_capture_codec = native::patch::CaptureCodec::from_str_id(&payload.ffmpeg_capture_codec);
     if !payload.capture_mode.is_empty() {
@@ -255,7 +249,6 @@ fn config_from_payload(payload: &CapturePayload) -> PatcherConfig {
         password: payload.obs_password.clone(),
     };
     cfg.save_local_patched_copy = payload.save_local_patched_copy;
-    cfg.add_condebug = payload.add_condebug;
     cfg.auto_clear_logs = payload.auto_clear_logs;
     cfg.auto_clear_previews = payload.auto_clear_previews;
     cfg.auto_clear_temp_demos = payload.auto_clear_temp_demos;
@@ -497,7 +490,6 @@ fn obs_config(host: String, port: u16, password: String) -> native::patch::ObsCo
         host: if host.is_empty() { "127.0.0.1".to_string() } else { host },
         port: if port == 0 { 4455 } else { port },
         password,
-        ..Default::default()
     }
 }
 
@@ -1167,7 +1159,7 @@ pub async fn scan_directory_impl(
                     .binary_search_by(|p: &PathBuf| {
                         p.file_name()
                             .unwrap_or_default()
-                            .cmp(&path_buf.file_name().unwrap_or_default())
+                            .cmp(path_buf.file_name().unwrap_or_default())
                     })
                     .unwrap_or_else(|pos| pos);
                 list.insert(insert_idx, path_buf);
@@ -1187,7 +1179,7 @@ pub async fn scan_directory_impl(
                             .binary_search_by(|p: &PathBuf| {
                                 p.file_name()
                                     .unwrap_or_default()
-                                    .cmp(&path.file_name().unwrap_or_default())
+                                    .cmp(path.file_name().unwrap_or_default())
                             })
                             .unwrap_or_else(|pos| pos);
                         list.insert(insert_idx, path);
@@ -1296,16 +1288,6 @@ pub async fn scan_directory_impl(
     result
 }
 
-pub fn simulate_aot_capacity(streaks: Vec<f32>, fps: u32, bytes_per_frame: u64, available_bytes: u64) -> (u64, bool) {
-    let mut total_projected_bytes: u64 = 0;
-    for duration in streaks {
-        let frames = (duration * fps as f32).ceil() as u64;
-        total_projected_bytes += frames * bytes_per_frame;
-    }
-    let has_enough_space = total_projected_bytes <= available_bytes;
-    (total_projected_bytes, has_enough_space)
-}
-
 // ── Bookmark Previews (.dodtools_preview) ─────────────────────────────────────
 //
 // `build_preview_patch_jobs` (native/src/patch/builder.rs) groups a flat list
@@ -1338,7 +1320,7 @@ fn write_hidden_sidecar(path: &Path) -> std::io::Result<()> {
 
 /// Validates the HLAE/hl.exe paths, ensures `<hl_parent>/dod` exists, and
 /// builds a minimal `PatcherConfig` carrying just the fields
-/// `build_hlae_process` reads (hlae_path/game_path/resolution/separate_hud).
+/// `build_hlae_process` reads (hlae_path/game_path/resolution).
 fn resolve_preview_env(hlae_path: &str, game_path: &str) -> Result<(PatcherConfig, PathBuf), String> {
     if hlae_path.trim().is_empty() || game_path.trim().is_empty() {
         return Err(crate::messages::configure_paths_before("previewing"));
@@ -1561,7 +1543,6 @@ pub async fn launch_standalone_game(app: tauri::AppHandle) -> Result<(), String>
             game_path: settings.hl_path.clone(),
             resolution_width: settings.resolution_width,
             resolution_height: settings.resolution_height,
-            separate_hud: settings.separate_hud,
             ffmpeg_capture: settings.ffmpeg_capture,
             ffmpeg_capture_codec: native::patch::CaptureCodec::from_str_id(&settings.ffmpeg_capture_codec),
             ..PatcherConfig::default()
@@ -1633,6 +1614,7 @@ fn is_engine_process_name(name: &str) -> bool {
 /// deterministic answer instead of asking the user to interpret a raw OS
 /// socket error themselves.
 fn is_obs_process_running() -> bool {
+    use sysinfo::{ProcessExt, SystemExt};
     let sys = sysinfo::System::new_all();
     sys.processes().values().any(|p| {
         let lower = p.name().to_lowercase();
@@ -1643,6 +1625,7 @@ fn is_obs_process_running() -> bool {
 /// True if any `hl.exe` or `hlae.exe` process is currently running.
 #[tauri::command]
 pub fn check_engine_processes() -> bool {
+    use sysinfo::{ProcessExt, SystemExt};
     let sys = sysinfo::System::new_all();
     sys.processes()
         .values()
@@ -1652,13 +1635,13 @@ pub fn check_engine_processes() -> bool {
 /// Aggressively terminates every running `hl.exe`/`hlae.exe` instance.
 #[tauri::command]
 pub fn kill_engine_processes() -> Result<(), String> {
+    use sysinfo::{ProcessExt, SystemExt};
     let sys = sysinfo::System::new_all();
     for process in sys.processes().values() {
-        if is_engine_process_name(process.name()) {
-            if !process.kill() {
+        if is_engine_process_name(process.name())
+            && !process.kill() {
                 log::warn!("Failed to kill engine process pid={}", process.pid());
             }
-        }
     }
     Ok(())
 }
@@ -1809,7 +1792,6 @@ mod tests {
             ffmpeg_override_path: None,
             resolution_width: 1920,
             resolution_height: 1080,
-            separate_hud: true,
             ffmpeg_capture: false,
             ffmpeg_capture_codec: String::new(),
             capture_mode: String::new(),
@@ -1817,7 +1799,6 @@ mod tests {
             obs_port: 0,
             obs_password: String::new(),
             save_local_patched_copy: false,
-            add_condebug: true,
             streaks: Vec::new(),
             pre_roll_seconds: 2.0,
             post_roll_seconds: 0.6,
@@ -1856,23 +1837,6 @@ mod tests {
         assert_eq!(payload.fast_forward_speed, 0.05);
     }
 
-    /// Separate HUD and direct-to-video are both carried through to the patcher
-    /// config, and the two together are a supported combination. They were
-    /// briefly refused as a pair while the HUD streams captured blank; that
-    /// turned out to be the alpha buffer, not the FFmpeg path, and is fixed in
-    /// capture_engine's launch flags. This asserts the pairing survives the
-    /// mapping so the block cannot creep back in unnoticed.
-    #[test]
-    fn test_separate_hud_and_video_capture_survive_together() {
-        let mut payload = sample_payload();
-        payload.separate_hud = true;
-        payload.ffmpeg_capture = true;
-
-        let cfg = config_from_payload(&payload);
-        assert!(cfg.separate_hud);
-        assert!(cfg.ffmpeg_capture);
-    }
-
     #[test]
     fn test_config_from_payload_maps_scalar_fields() {
         let payload = sample_payload();
@@ -1882,7 +1846,6 @@ mod tests {
         assert_eq!(cfg.game_path, payload.game_path);
         assert_eq!(cfg.resolution_width, 1920);
         assert_eq!(cfg.resolution_height, 1080);
-        assert_eq!(cfg.separate_hud, true);
         assert_eq!(cfg.capture_fps, 300);
         assert_eq!(cfg.session_id, "session_test");
         assert_eq!(cfg.init_commands, vec!["exec autoexec".to_string()]);

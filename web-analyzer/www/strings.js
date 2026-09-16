@@ -114,6 +114,8 @@ export const STRINGS = {
     BRITISH_LABEL: 'British',
 
     TEAM_SCORE_TIMELINE_TITLE: 'Team Score Timeline',
+    TIMELINE_TOOLTIP_ELAPSED_LABEL: 'Time Elapsed:',
+    TIMELINE_TOOLTIP_TIMESTAMP_LABEL: 'Demo Timestamp:',
 
     ROUNDS_TITLE: 'Rounds',
     COL_ROUND_NUM: '#',

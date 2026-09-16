@@ -1,100 +1,11 @@
-# CLAUDE.md
+See CLAUDE.md.
 
-This file provides guidance to Claude Code (claude.ai/code) and offline IDE agents when working in this repository.
+That file is the single authority for this repo's architecture notes, module
+boundaries, and engine guardrails; Cursor reads it from here.
 
-## Project Overview
-
-`dod-tools` is a high-performance pipeline for capturing, patching, and analyzing **Day of Defeat 1.3** (GoldSrc engine) demo files (`.dem`). It drives **HLAE** (Half-Life Advanced Effects) and `hl.exe` headlessly to batch-record highlight clips out of recorded matches, transcodes the results via FFmpeg, and parses demos for match analytics (scoreboards, kills, chat, rounds). The active desktop application is a Tauri + Vite frontend (`desktop-studio/`).
-
----
-
-## Workspace Layout & Module Boundaries
-
-Cargo workspace (`Cargo.toml`, resolver "3", edition 2024) containing the following members:
-
-- **`dod/`** — Low-level `nom`-based binary parsers/types for DoD 1.3 demo message structures. Pure parsing primitives (no I/O); consumed by `analysis` and `native`.
-- **`analysis/`** — Turns parsed demo data into match analytics (`scoreboard.rs`, `kill.rs`, `chat.rs`, `round.rs`, `mortality.rs`, `player.rs`, `clan_match.rs`, `localization.rs`). Entry point: `Analysis::try_from_bytes_with_progress`.
-- **`dem-patch/`** — Vendored fork of the `dem` crate (`[patch.crates-io]`). Low-level demo bit/byte reading/writing (`bit.rs`, `byte_writer.rs`, `demo_parser.rs`, `demo_writer.rs`, `delta.rs`).
-- **`native/`** — Core engine crate containing almost all non-UI logic:
-  - `capture_engine.rs` — Orchestrates capture batches: spawns HLAE/`hl.exe`, drives playback, injects console commands at scheduled ticks.
-  - `patch/` — Demo-file binary patcher (`engine.rs`, `builder.rs`, `scanner.rs`, `highlevel.rs`, `types.rs`). Scans, injects (bookmarks, director commands, `DRC_CMD_INEYE`), and rewrites GoldSrc frames.
-  - `hlcr/` — Take management & FFmpeg transcoding (`renderer.rs`, `scanner.rs`, `config.rs`, `autosave.rs`).
-  - `shared/`, `sys/`, `utils/` — Path resolution, disk-space queries, demo hashing.
-  - `views/export_manager.rs` — Shared export-pool/drive-routing logic.
-  - `src/bin/cli/main.rs` → `preview_cli` binary: Headless entry point with drag-and-drop support.
-- **`hl-demo-auditor/`** — Standalone duplicate-demo detector using size + header hash (`fnv1a_hash`).
-- **`benchmark/`** — Performance benchmarking binary for the parsing/patching pipeline.
-- **`desktop-studio/`** — Active Tauri v2 + Vite/JS frontend workspace (`src-tauri/` backend and `src/*.js` frontend modules).
-
----
-
-## Common Development Commands
-
-    # Build workspace binaries
-    cargo build --workspace
-    cargo build --release --workspace
-
-    # Execute test suites
-    cargo test --workspace
-    cargo test -p analysis            # Single crate
-    cargo test -p native patch::      # Single module
-
-    # Run headless preview CLI
-    cargo run -p native --bin preview_cli -- <path-to-demo-or-folder>
-
-    # Desktop App Dev Loop (Run from desktop-studio/)
-    cd desktop-studio
-    npm install
-    npm run tauri dev     # Launch Tauri window with Vite HMR
-    npm run dev           # Vite dev server only
-    npm run build         # Production Vite build
-
----
-
-## System Guardrails & Agent Directives
-
-### Context & Execution Boundaries
-- **Context Scope:** Rely strictly on active chat code and files inside `docs/`. Strictly ignore any open files in hidden dot-directories to prevent prompt contamination. Do not index `target/`, `demos/`, or `Cargo.lock`.
-- **Locked Files:** Do not modify build/deployment configs, environment files, lint rules, or public APIs unless explicitly requested.
-- **Behavior:** Be concise. Suppress conversational filler, apologies, and requirement summaries.
-- **Code Edits:** Apply minimal changes directly to files. Never rewrite unchanged lines or entire files unnecessarily.
-- **Ambiguity:** State critical technical assumptions once and proceed. Fail loudly on blocking errors.
-
-### Terminal & Shell Rules
-- **Diagnostics:** Never output raw compiler logs. Provide concise, single-sentence failure summaries and direct mechanical fixes.
-- **Pipeline Execution:** DO NOT run `cargo check` or `cargo run` internally without piping output. Pipe execution through `tuf` (e.g., `cmd 2>&1 | tuf`).
-- **Execution Bypass:** Use `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` for blocked scripts. For unsigned binaries blocked by WDAC, execute via `run.ps1` to sequence process stops, build steps, and signature updates.
-- **Shell Chaining:** Collapse multi-step shell commands into a single sequence using semicolons `;`.
-
----
-
-## Concurrency, Rust & Memory Constraints
-
-- **WASM Protection:** The codebase carries legacy `wasm32-unknown-unknown` compilation gates. Isolate native multi-threading, direct file I/O (`std::fs`), and process spawning (`std::process::Command`) behind `#[cfg(not(target_arch = "wasm32"))]`.
-- **Hot-Path Locking:** Never introduce blocking mutexes on the UI frame loop. Wrap shared catalogs in `std::sync::RwLock` and use atomics/channels for cross-thread signaling.
-- **Telemetry Throttling:** Background progress channels must throttle update traffic to ~30fps (~33ms) using an `Arc<AtomicU32>` debouncer to prevent event loop flooding.
-- **Memory Safety:** Never use fixed-size stack buffers (`[u8; N]`) for binary stream slicing. Use heap-allocated `Vec<u8>` gated by explicit 2MB payload limits.
-- **Process Lifecycles:** External processes (HLAE, `hl.exe`, FFmpeg) must use non-blocking polling (`child.try_wait()`) matched with a ~16ms sleep. Verify an `Arc<AtomicBool>` cancellation token every cycle and chain `.kill_on_drop(true)`.
-
----
-
-## Domain & Engine Quirks (GoldSrc & HLAE)
-
-- **Terminology:** Strictly enforce the naming convention **"HLAE Game Capture"** (never "Native Game Capture").
-- **Frame Order:** `DemoStart` (Type 2) frames must be processed *before* any `ConsoleCommand` (Type 3) frames are written, or the GoldSrc engine reads uninitialized memory.
-- **Cbuf Payload Limit:** Command strings injected per tick must stay strictly under GoldSrc's 64-byte `Cbuf_AddTextToBuffer` limit. Stagger long absolute paths across multiple ticks.
-- **Packet Integrity:** Never interleave injected frames inside existing `NetworkMessage` payloads. Injected bookmarks/director frames must be written as complete, standalone frames ahead of the original packet to prevent `svc_bad` buffer overflows.
-- **Path Escaping:** All runtime paths passed to HLAE console inputs must replace forward slashes with double-escaped backslashes (`.replace("/", "\\\\")`).
-- **Tauri IPC:** Every frontend `invoke()` call in `ipc_bridge.js` must implement a `.catch()` block to prevent swallowed Rust backend errors.
-- **Filesystem Picking:** Force the use of `@tauri-apps/plugin-dialog` native pickers instead of text input paths to prevent string escaping vulnerabilities.
-
----
-
-## Mandatory Task Completion Protocol
-
-Upon completion or blocking of any task, you MUST output a SINGLE markdown code block holding the return payload. The title MUST match the prompt title provided to you:
-
-    ### 📡 Return Payload for Web AI: [Exact Prompt Title]
-    - **Files Modified:** [List relative file paths]
-    - **Logic Changes:** [Point-form summary of modifications]
-    - **Terminal/Compiler Status:** [Status of build/test commands]
+This file used to be a full copy of CLAUDE.md. It drifted — by 2026-09-10 it was
+three weeks stale and missing six sections, including the two that exist to
+prevent silent corruption (the `r_decals` mid-demo rule, which shifts every later
+frame ordinal by +1, and the pipeline-owned command list). It also still mandated
+a task-completion return-payload format that is no longer wanted. Two authorities
+that disagree is worse than one, so this is a pointer now. Don't re-fork it.

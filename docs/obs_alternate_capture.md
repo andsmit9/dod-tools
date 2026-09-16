@@ -301,8 +301,9 @@ Something has to cross that gap. There are three ways, and the second is the rec
     [dod-tools] STOP_RECORD - Tick 44950
     [dod-tools] FAST_FORWARD - Tick 45150
 
-plus a `BREADCRUMB` every `BREADCRUMB_INTERVAL_TICKS`. With `-condebug` — **which is on by default**
-(`add_condebug: true`, `native/src/patch/types.rs`) — these land in `qconsole.log` beside `hl.exe`, a
+plus a `BREADCRUMB` every `BREADCRUMB_INTERVAL_TICKS`. With `-condebug` — **which
+`build_hlae_process` passes on every launch, with no way to turn it off**
+(`native/src/patch/types.rs`) — these land in `qconsole.log` beside `hl.exe`, a
 file the app already knows about and deletes (`shared::paths::remove_console_log`).
 
 So the signalling channel exists, is tick-accurate, needs no new engine commands, and costs the

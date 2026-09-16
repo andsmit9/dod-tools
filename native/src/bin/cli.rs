@@ -650,12 +650,11 @@ impl Display for Markdown {
                         let mut grouped = Vec::new();
                         for (_, weapon, _) in &kill_streak.kills {
                             let name = format!("{weapon:?}");
-                            if let Some((last_name, count)) = grouped.last_mut() {
-                                if *last_name == name {
+                            if let Some((last_name, count)) = grouped.last_mut()
+                                && *last_name == name {
                                     *count += 1;
                                     continue;
                                 }
-                            }
                             grouped.push((name, 1));
                         }
                         let weapons_used = grouped

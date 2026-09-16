@@ -12,3 +12,6 @@ analysis = { path = "../analysis" }
 dem = { workspace = true }
 dod = { path = "../dod" }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,11 +1,29 @@
 [workspace]
 resolver = "3"
-members = ["analysis", "dod", "native", "hl-demo-auditor", "benchmark", "desktop-studio/src-tauri", "web-analyzer"]
+members = [
+    "analysis",
+    "dod",
+    "native",
+    "hl-demo-auditor",
+    "benchmark",
+    "desktop-studio/src-tauri",
+    "web-analyzer",
+    # Vendored fork of the `dem` crate, wired in below via [patch.crates-io].
+    # Membership and patching are independent: being a member is what puts it
+    # under `cargo test --workspace` and `cargo clippy --workspace`, which it
+    # was outside of entirely until 2026-09-10. It is the bit-level demo
+    # reader/writer, so it is the last thing that should be unlinted.
+    "dem-patch",
+]
 
 [workspace.package]
 edition = "2024"
 version = "0.10.0"
 
+# Every dependency more than one member uses belongs here, so two members can
+# never quietly end up on different versions of the same crate (which is how
+# sysinfo 0.29 and 0.30 both ended up in the tree, each compiled separately).
+# A member opts in with `{ workspace = true }` and adds its own `features`.
 [workspace.dependencies]
 clap = "4.5.41"
 dem = "0.2.3"
@@ -17,12 +35,68 @@ serde_json = "1.0.141"
 tabled = "0.20.0"
 tokio = "1.46.1"
 web-time = { version = "1.1.0", features = ["serde"] }
+log = "0.4"
+dirs = "5.0"
+# 1.9.3 is from 2023 and the tree also carries 2.x transitively. Unified here
+# first; the bump to 2.x is a separate change (IndexMap's 2.0 renamed several
+# methods) and wants its own testing.
+indexmap = { version = "1.9.3", features = ["std"] }
+# Pinned at 0.29 by native/src/sys/disk.rs and capture_engine.rs, which use the
+# extension-trait API (SystemExt/ProcessExt/DiskExt) that sysinfo 0.30 removed.
+# desktop-studio was independently on 0.30, so both were being compiled. Moving
+# the whole workspace to a current sysinfo means rewriting the disk-headroom
+# query, which is load-bearing for capture routing — separate change.
+sysinfo = "0.29"
+# Must match the wasm-bindgen-cli version deploy_web.yml installs, exactly.
+wasm-bindgen = "=0.2.126"
+js-sys = "0.3.77"
+console_error_panic_hook = "0.1.7"
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
+# Moved up from desktop-studio/src-tauri/Cargo.toml, where Cargo ignored it and
+# warned about it on every workspace command.
+strip = true
+
+# Workspace lint policy. CI runs `cargo clippy --workspace --all-targets --
+# -D warnings`, so anything not allowed here fails the build — the point is that
+# new noise cannot accumulate the way the ~200 warnings this list was written
+# against did.
+#
+# Every entry is a judgement that clippy is wrong for this codebase, not a
+# backlog. Anything merely tedious got fixed instead.
+[workspace.lints.clippy]
+# Constants asserted against each other in tests, on purpose. These are
+# regression guards -- `OBS_TAKE_SEPARATION_SECONDS > 1.065` exists so that
+# lowering the constant fails the suite loudly rather than silently losing
+# takes. Clippy sees both sides are `const` and calls the assertion pointless,
+# which is exactly backwards.
+assertions_on_constants = "allow"
+# `Default::default()` then assign, in test fixture and config builders. The
+# incremental form reads as "the default, except these three fields", which is
+# the intent; folding it into a struct literal means restating every field.
+field_reassign_with_default = "allow"
+# The demo pipeline genuinely passes tuples of (entry index, frame index,
+# ordinal) and maps keyed on PathBuf to Arc<Vec<f32>>. A type alias would name
+# the shape without explaining it.
+type_complexity = "allow"
+# `spawn_capture_engine` (8) and the CLI entry point (12). Both are one-call
+# seams where every argument is independent; a params struct would exist only
+# to satisfy the lint.
+too_many_arguments = "allow"
+# Indexing by axis (`for axis in 0..3 { out[axis] = ... }`) reads better than an
+# iterator when the index *is* the meaning -- x, y, z.
+needless_range_loop = "allow"
+# `!(hi > lo)` in patch/bsp.rs is deliberate NaN handling: with a NaN bound it is
+# true and the surface is skipped, where `hi <= lo` is false and the walk
+# proceeds on garbage. Clippy's suggested rewrite inverts the safe case.
+neg_cmp_op_on_partial_ord = "allow"
+# One site, in the vendored dem-patch parser. Correct as written, and that
+# crate's bit-level code is not somewhere to make cosmetic edits.
+unnecessary_unwrap = "allow"
 
 [patch.crates-io]
 dem = { path = "./dem-patch" }

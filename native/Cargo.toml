@@ -2,6 +2,12 @@
 name = "native"
 version.workspace = true
 edition.workspace = true
+# The [[bin]] list below is the whole list. Without this, Cargo autodiscovers
+# every file in src/bin/ as an extra binary target, which is how 21 one-off R&D
+# probes ended up compiling (and getting a test harness linked) on every
+# `cargo build --workspace` / `cargo test --workspace`. Those now live in
+# native/examples/ — see the README there. Adding a binary means adding it here.
+autobins = false
 
 [dependencies]
 analysis = { path = "../analysis" }
@@ -16,8 +22,8 @@ tabled = { workspace = true }
 chrono = "0.4.45"
 web-time = { workspace = true }
 nom = { workspace = true }
-log = "0.4"
-dirs = "5.0"
+log = { workspace = true }
+dirs = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "process", "fs", "sync", "io-util", "time"] }
@@ -25,7 +31,7 @@ walkdir = "2.5.0"
 hl-demo-auditor = { path = "../hl-demo-auditor" }
 rfd = "0.14"
 open = "5.1"
-sysinfo = "0.29"
+sysinfo = { workspace = true }
 keepawake = "0.6"
 # Map fetching (see patch/map_fetch.rs). Blocking and small on purpose: the
 # download runs on a worker thread and verifies before it installs, so there is
@@ -40,10 +46,24 @@ tungstenite = { version = "0.30.0", default-features = false, features = ["hands
 sha2 = "0.11.0"
 base64 = "0.23.1"
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }
+wasm-bindgen-futures = "0.4.50"
+console_error_panic_hook = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { version = "0.3.77", features = ["HtmlCanvasElement", "Window", "Document", "Element", "File", "Storage", "Worker", "Blob", "Url", "DedicatedWorkerGlobalScope", "MessageEvent", "HtmlCollection", "NodeList"] }
+
+# ── Binaries ────────────────────────────────────────────────────────────────
+# Real tools, not probes. Anything exploratory belongs in native/examples/,
+# which builds only on `cargo run --example` / `cargo build --examples`.
+
+# Headless preview builder: demos -> `<stem>_preview.dem` with a bookmark on
+# every highlight. The app shells out to this.
 [[bin]]
 name = "preview_cli"
-path = "src/bin/cli/main.rs"
+path = "src/bin/preview_cli/main.rs"
 
+# Terminal demo analyzer (scoreboards, kills, chat, rounds).
 [[bin]]
 name = "dod-tools-cli"
 path = "src/bin/cli.rs"
@@ -56,37 +76,19 @@ path = "src/bin/dump.rs"
 name = "dod-tools-inspect"
 path = "src/bin/inspect.rs"
 
+# Map-library verification and fetch for a demo folder.
 [[bin]]
-name = "frame_inspector"
-path = "src/bin/frame_inspector.rs"
+name = "check_maps"
+path = "src/bin/check_maps.rs"
 
+# Reports banned/hazardous commands in the user's game .cfg files. Read-only.
 [[bin]]
-name = "inspect_reconnect"
-path = "src/bin/inspect_reconnect.rs"
-
-[[bin]]
-name = "test_builder"
-path = "src/bin/test_builder.rs"
-
-[[bin]]
-name = "check_ticks"
-path = "src/bin/check_ticks.rs"
+name = "check_cfgs"
+path = "src/bin/check_cfgs.rs"
 
 [[bin]]
 name = "strip_decals"
 path = "src/bin/strip_decals.rs"
 
-[[bin]]
-name = "probe_decals"
-path = "src/bin/probe_decals.rs"
-
-[[bin]]
-name = "probe_obs"
-path = "src/bin/probe_obs.rs"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen = "0.2.100"
-wasm-bindgen-futures = "0.4.50"
-console_error_panic_hook = "0.1.7"
-js-sys = "0.3.77"
-web-sys = { version = "0.3.77", features = ["HtmlCanvasElement", "Window", "Document", "Element", "File", "Storage", "Worker", "Blob", "Url", "DedicatedWorkerGlobalScope", "MessageEvent", "HtmlCollection", "NodeList"] }
+[lints]
+workspace = true

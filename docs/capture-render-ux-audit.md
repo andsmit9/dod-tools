@@ -81,8 +81,8 @@ while step < total_demo_frames {
 }
 ```
 
-With `add_condebug` on (the default — `PatcherConfig::default()` in
-`native/src/patch/types.rs:256`), GoldSrc echoes these into `dod/qconsole.log`.
+With `-condebug`, which `build_hlae_process` passes on every launch
+(`native/src/patch/types.rs`), GoldSrc echoes these into `dod/qconsole.log`.
 `capture_engine.rs` deletes that file before the run (`capture_engine.rs:86`,
 `builder.rs:854`) but never tails it — there's even a standalone debug binary
 (`native/src/bin/check_ticks.rs`) that already knows how to parse `BREADCRUMB`
