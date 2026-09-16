@@ -1,0 +1,35 @@
+<!doctype html>
+<!--
+  Minimal harness for cfg_warnings.js — see tests/e2e/README.md for the
+  general shape.
+
+  Deliberately NOT the real app shell: cfg_warnings.js only ever writes into
+  the two banner elements below (grep `renderInto(` in cfg_warnings.js if this
+  ever needs to grow), so this carries just those and calls
+  refreshCfgWarnings directly. The module and ipc_bridge.js run completely
+  unmodified — vite.config.e2e.js swaps only the Tauri IPC imports for
+  tests/e2e/mocks/, so a test controls the whole report by registering a
+  `scan_game_configs` handler on window.__mockInvokeHandlers.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>cfg_warnings.js test harness</title>
+</head>
+<body>
+  <div id="init-commands-warning-banner" hidden></div>
+  <div id="scheduled-commands-warning-banner" hidden></div>
+
+  <script type="module">
+    import { refreshCfgWarnings, bannedCommandCount } from '/src/cfg_warnings.js';
+
+    // Exposed so a test can drive a refresh with whatever report its
+    // `scan_game_configs` handler is registered to return.
+    window.__refresh = (gamePath, initCommands = [], customCommands = [], context = {}) =>
+      refreshCfgWarnings(gamePath, initCommands, customCommands, context);
+    window.__bannedCommandCount = bannedCommandCount;
+
+    window.__harnessReady = true;
+  </script>
+</body>
+</html>
