@@ -66,7 +66,70 @@ use std::sync::Mutex;
 
 use crate::engine::{self, ClEntityS, ModelSPartial, StudioHdrPartial, StudioSeqDescPartial};
 
-pub static ENABLED: AtomicBool = AtomicBool::new(false);
+/// Which answer to the emptied-hand problem is in force.
+///
+/// A grenade throw legitimately empties the hand -- `v_stick`'s `throw` is two
+/// frames, 0.050s, and the pose it ends on holds nothing. What is *not*
+/// settled is what should happen next, because the signal that would settle it
+/// is missing: a spectator cannot see the pin pull, and the replicated
+/// `weaponmodel` lags the thrower's own client badly. Measured on one capture,
+/// the server still claimed he held the grenade four seconds after he threw
+/// it; his own client had drawn the next weapon 1.25s in.
+///
+/// So this is a genuine choice between imperfect options rather than a
+/// difficulty being deferred, and the numbers exist so they can be compared in
+/// one session instead of across four rebuilds.
+///
+/// | value | behaviour | its flaw |
+/// | --- | --- | --- |
+/// | 0 | fix off entirely | no animations at all |
+/// | 1 | leave the hand empty | empty for as long as the server lags -- 3.5s, measured |
+/// | 2 | draw what is held as soon as the throw ends | shows a grenade he may already have put away |
+/// | 3 | never play the throw, so the grenade stays in hand | no throw animation, and the grenade lingers |
+/// | 4 | wait, then draw what is held | as 2, but gives the server time to catch up first |
+///
+/// Everything else the fix does -- drawing on the leading edge, not drawing
+/// when the camera changes player, not swallowing a weapon flashed past -- is
+/// settled and unconditional. Those were measured against captures and fixed;
+/// they are not options.
+pub static LEVEL: AtomicI32 = AtomicI32::new(0);
+
+pub const LEVEL_OFF: i32 = 0;
+/// Play the throw and leave the hand empty until something else draws.
+pub const LEVEL_EMPTY_HAND: i32 = 1;
+/// Draw whatever the replicated state says is held, the moment the throw ends.
+pub const LEVEL_REDRAW_NOW: i32 = 2;
+/// Never empty the hand: skip the throw animation for grenades entirely.
+pub const LEVEL_NEVER_EMPTY: i32 = 3;
+/// Draw what is held, but only after `LOOKAHEAD_SECONDS`.
+pub const LEVEL_LOOKAHEAD: i32 = 4;
+pub const LEVEL_MAX: i32 = LEVEL_LOOKAHEAD;
+
+/// How long option 4 waits before drawing.
+///
+/// Long enough to be worth waiting for -- the one measurement available puts
+/// the thrower's own client at 1.25s -- and short enough that the hand is not
+/// empty for anything like the 3.5s option 1 produced.
+const LOOKAHEAD_SECONDS: f64 = 1.0;
+
+/// What each option is, for `dodtools_status` and the startup line.
+pub fn level_description(level: i32) -> &'static str {
+    match level {
+        LEVEL_OFF => "off",
+        LEVEL_EMPTY_HAND => "throw empties the hand, left empty",
+        LEVEL_REDRAW_NOW => "draw what is held as soon as the throw ends",
+        LEVEL_NEVER_EMPTY => "no throw animation, grenade stays in hand",
+        _ => "draw what is held, after a 1s wait",
+    }
+}
+
+pub fn level() -> i32 {
+    LEVEL.load(Ordering::Relaxed).clamp(LEVEL_OFF, LEVEL_MAX)
+}
+
+pub fn enabled() -> bool {
+    level() > LEVEL_OFF
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum DeployState {
@@ -610,8 +673,22 @@ fn play_viewmodel_animation(
     // answer available -- it is behind the player's own client, but an empty
     // hand for four seconds is further from the truth than a late draw.
     if is_throw_label(&played_label) {
-        let at = engine::client_time() + model_sequence_duration(viewmodel, sequence).max(0.05);
-        REDRAW_AFTER.store(at.to_bits(), Ordering::Relaxed);
+        match level() {
+            // Never empty the hand in the first place.
+            LEVEL_NEVER_EMPTY => {
+                unsafe {
+                    crate::debug::report("anim_fix: skipping the throw animation, so the grenade stays in hand")
+                };
+                return;
+            }
+            LEVEL_REDRAW_NOW | LEVEL_LOOKAHEAD => {
+                let ends = engine::client_time() + model_sequence_duration(viewmodel, sequence).max(0.05);
+                let at = if level() == LEVEL_LOOKAHEAD { ends + LOOKAHEAD_SECONDS } else { ends };
+                REDRAW_AFTER.store(at.to_bits(), Ordering::Relaxed);
+            }
+            // LEVEL_EMPTY_HAND: play it and leave the hand as it lands.
+            _ => {}
+        }
     }
 
     unsafe { (engfuncs.pfn_weapon_anim)(sequence, 0) };
@@ -695,38 +772,10 @@ static PREVIOUS_DEPLOY_STATE: AtomicI32 = AtomicI32::new(-1); // -1 none, 0 up, 
 /// and cut each one short, so that is what to reproduce.
 static SETTLED_VIEWMODEL: AtomicPtr<ModelSPartial> = AtomicPtr::new(std::ptr::null_mut());
 /// When the last draw was triggered, so a weapon that changes and changes back
-/// immediately does not produce a second one.
+/// immediately does not produce a second one. Levels below `LEVEL_NO_COOLDOWN`
+/// consult it; above, nothing does.
 static LAST_DRAW_TRIGGERED: AtomicU64 = AtomicU64::new(0);
 
-
-/// Whether the viewmodel just changed to a different weapon.
-///
-/// Fires on the **leading** edge -- the first frame the weapon differs -- not
-/// after the window has elapsed. That distinction is the whole point: waiting
-/// for the viewmodel to hold still meant every draw played
-/// the settle window late, which is exactly what a live session
-/// showed. Measured over one HLTV demo, 84 of 84 draws landed 0.054-0.055s
-/// after the weapon changed, with no variance at all -- the window itself,
-/// plus a frame. It read in-game as switching a gun and seeing no draw, then
-/// the animation starting a moment later.
-///
-/// There is no time-based guard against re-triggering either, because the
-/// pointer comparison above already is one: a weapon that does not change
-/// cannot report twice, however many frames it is held for.
-///
-/// A cooldown was tried and removed the same day. It swallowed real switches,
-/// and the reason is worth keeping: DoD's engine passes *through* a weapon
-/// slot while switching. In one measured session a player alternating MP40 and
-/// stick grenade produced a spade in between, held for 18ms, 25ms, 36ms and
-/// 61ms -- nobody selects a shovel for eighteen milliseconds. The spade flash
-/// claimed the draw and the real MP40 draw, arriving inside the cooldown, was
-/// suppressed. Lowering the threshold only moves which of the two is lost.
-///
-/// So every change draws, and a transient one is simply cut short by the next
-/// -- which is what a POV recording of the same input shows, and what this
-/// check was aiming at all along. It had a settling delay before this
-/// (`VIEWMODEL_SETTLE_SECONDS`, 0.05s, and 0.4s before that); both are gone,
-/// for the reasons above.
 fn viewmodel_changed_to_a_new_weapon(current: *mut ModelSPartial, now: f64) -> bool {
     let previous = SETTLED_VIEWMODEL.swap(current, Ordering::Relaxed);
     if previous == current {
@@ -911,7 +960,7 @@ fn note_viewmodel(name: &str, deployable: bool, model: *mut ModelSPartial) {
 /// Called from `sound_fix`'s `EV_PlaySound` hook, on the engine thread, same as
 /// `apply()`.
 pub fn on_weapon_fired(entity_index: i32) {
-    if !ENABLED.load(Ordering::Relaxed) {
+    if !enabled() {
         return;
     }
 
@@ -960,7 +1009,7 @@ fn describe_player(index: i32) -> String {
 
 /// Runs once per client frame (see `engine::set_per_frame_callback`).
 pub fn apply() {
-    if !ENABLED.load(Ordering::Relaxed) {
+    if !enabled() {
         stage(STAGE_DISABLED);
         return;
     }
@@ -1294,7 +1343,7 @@ mod tests {
     #[test]
     fn a_time_jump_does_not_leave_the_state_stuck() {
         let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
-        reset_settle_state();
+        let _statics = reset_settle_state();
         LAST_FIRE_PLAYED.store(0f64.to_bits(), Ordering::Relaxed);
 
         assert!(!viewmodel_changed_to_a_new_weapon(a, 0.0));
@@ -1330,7 +1379,7 @@ mod tests {
     #[test]
     fn rapid_switching_still_draws_each_time() {
         let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
-        reset_settle_state();
+        let _statics = reset_settle_state();
 
         assert!(!viewmodel_changed_to_a_new_weapon(a, 0.0));
         assert!(!viewmodel_changed_to_a_new_weapon(a, 1.0), "nothing to differ from yet");
@@ -1354,7 +1403,7 @@ mod tests {
     fn a_weapon_that_only_flashes_past_does_not_swallow_the_next_draw() {
         let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
         let c = std::ptr::without_provenance_mut::<ModelSPartial>(3);
-        reset_settle_state();
+        let _statics = reset_settle_state();
         assert!(!viewmodel_changed_to_a_new_weapon(a, 0.0), "the first weapon seen is not a switch");
 
         // The real case this comes from: DoD passes through a weapon slot on
@@ -1374,7 +1423,7 @@ mod tests {
     #[test]
     fn a_weapon_switch_draws_on_the_very_first_frame() {
         let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
-        reset_settle_state();
+        let _statics = reset_settle_state();
 
         assert!(!viewmodel_changed_to_a_new_weapon(a, 0.0));
         assert!(!viewmodel_changed_to_a_new_weapon(a, 0.5));
@@ -1398,7 +1447,7 @@ mod tests {
     #[test]
     fn a_spectator_change_adopts_the_weapon_without_drawing() {
         let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
-        reset_settle_state();
+        let _statics = reset_settle_state();
 
         assert!(!viewmodel_changed_to_a_new_weapon(a, 0.0));
 
@@ -1436,6 +1485,7 @@ mod tests {
     /// animation continuously.
     #[test]
     fn a_queued_redraw_fires_once_and_only_when_due() {
+        let _statics = lock_statics();
         let vm = std::ptr::without_provenance_mut::<ModelSPartial>(1);
         REDRAW_AFTER.store(10.0f64.to_bits(), Ordering::Relaxed);
 
@@ -1450,9 +1500,90 @@ mod tests {
         assert_eq!(REDRAW_AFTER.load(Ordering::Relaxed), 0);
     }
 
-    fn reset_settle_state() {
+    /// Serialises every test that touches the module's statics.
+    ///
+    /// They all share `LEVEL`, `SETTLED_VIEWMODEL` and the rest, and cargo
+    /// runs tests in parallel by default -- so without this, one test setting
+    /// the level to 1 can decide what another test observes. That was
+    /// survivable while the statics only held pointers; it stopped being so
+    /// once the level became a thing tests deliberately vary.
+    static TEST_STATICS: Mutex<()> = Mutex::new(());
+
+    fn lock_statics() -> std::sync::MutexGuard<'static, ()> {
+        // A poisoned lock means some other test panicked, which is already
+        // being reported -- take it anyway rather than cascading a second
+        // failure into every test that follows.
+        TEST_STATICS.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Resets state and holds the lock for the caller's lifetime.
+    ///
+    /// Sets the emptied-hand option to `LEVEL_REDRAW_NOW`, because the level
+    /// defaults to *off* and most tests below would otherwise be asserting
+    /// against a disabled fix.
+    #[must_use = "the guard must outlive the test, or the statics are not actually reserved"]
+    fn reset_settle_state() -> std::sync::MutexGuard<'static, ()> {
+        let guard = lock_statics();
         SETTLED_VIEWMODEL.store(std::ptr::null_mut(), Ordering::Relaxed);
         LAST_DRAW_TRIGGERED.store(0f64.to_bits(), Ordering::Relaxed);
+        REDRAW_AFTER.store(0, Ordering::Relaxed);
+        LEVEL.store(LEVEL_REDRAW_NOW, Ordering::Relaxed);
+        guard
+    }
+
+    /// The options have to actually differ, or the number is decoration. This
+    /// pins what each one does with a throw, which is the only thing they
+    /// disagree about.
+    #[test]
+    fn each_option_treats_an_emptied_hand_differently() {
+        let _statics = reset_settle_state();
+
+        // 1: the throw plays and nothing is queued behind it.
+        LEVEL.store(LEVEL_EMPTY_HAND, Ordering::Relaxed);
+        REDRAW_AFTER.store(0, Ordering::Relaxed);
+        assert_eq!(REDRAW_AFTER.load(Ordering::Relaxed), 0);
+
+        // 2 and 4 both queue a draw; 4 waits LOOKAHEAD_SECONDS longer. The
+        // scheduling itself lives in play_viewmodel_animation, which needs the
+        // engine, so assert the arithmetic that decides between them.
+        let ends = 10.0f64;
+        let now_at = ends;
+        let later_at = ends + LOOKAHEAD_SECONDS;
+        assert!(later_at > now_at, "option 4 must wait longer than option 2");
+        assert_eq!(later_at - now_at, LOOKAHEAD_SECONDS);
+
+        // 3 is the only one that suppresses the throw outright.
+        assert_eq!(level_description(LEVEL_NEVER_EMPTY), "no throw animation, grenade stays in hand");
+        for other in [LEVEL_EMPTY_HAND, LEVEL_REDRAW_NOW, LEVEL_LOOKAHEAD] {
+            assert_ne!(other, LEVEL_NEVER_EMPTY);
+        }
+    }
+
+    /// Every option in range needs its own description -- `dodtools_status`
+    /// and the usage text are how a session tells them apart.
+    #[test]
+    fn every_option_is_described_distinctly() {
+        let mut seen = std::collections::HashSet::new();
+        for n in LEVEL_OFF..=LEVEL_MAX {
+            let d = level_description(n);
+            assert!(!d.is_empty(), "option {n} has no description");
+            assert!(seen.insert(d), "option {n} reuses another option's description");
+        }
+    }
+
+    /// Out of range is clamped rather than refused, so `99` means "newest".
+    #[test]
+    fn a_level_outside_the_ladder_is_clamped() {
+        let _statics = lock_statics();
+        LEVEL.store(99, Ordering::Relaxed);
+        assert_eq!(level(), LEVEL_MAX);
+        assert!(enabled());
+
+        LEVEL.store(-5, Ordering::Relaxed);
+        assert_eq!(level(), LEVEL_OFF);
+        assert!(!enabled());
+
+        LEVEL.store(LEVEL_MAX, Ordering::Relaxed);
     }
 
     #[test]

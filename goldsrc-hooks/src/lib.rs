@@ -56,16 +56,29 @@ fn env_flag(name: &str, default: bool) -> bool {
     }
 }
 
+/// Reads a `GOLDSRC_HOOKS_*` iteration number, falling back to `default`.
+///
+/// Out of range is clamped rather than refused: `GOLDSRC_HOOKS_ANIM_FIX=99`
+/// is a usable way to say "newest" without having to know what the newest is.
+/// Unparseable reads as off, which is the safe way to land.
+fn env_level(name: &str, default: i32) -> i32 {
+    match std::env::var(name) {
+        Ok(value) => value.trim().parse::<i32>().unwrap_or(0),
+        Err(_) => default,
+    }
+    .clamp(anim_fix::LEVEL_OFF, anim_fix::LEVEL_MAX)
+}
+
 /// The animation fix starts **off**, like the sound fix: a capture pipeline
 /// should not silently alter viewmodel animations for anyone who happens to
-/// have the DLL loaded. Turn it on per session with
-/// `dodtools_hltv_animation_fix 1`, or set `GOLDSRC_HOOKS_ANIM_FIX=1` to have
-/// it start on.
+/// have the DLL loaded. Pick an iteration per session with
+/// `dodtools_hltv_animation_fix <0-5>`, or set `GOLDSRC_HOOKS_ANIM_FIX` to
+/// have it start on one -- see `anim_fix::LEVEL` for what each is.
 ///
-/// It was `true` through live testing, because a session that begins by
+/// It was on through live testing, because a session that begins by
 /// forgetting to type the command produces a log with nothing in it and looks
 /// like a broken hook.
-const ANIM_FIX_DEFAULT: bool = false;
+const ANIM_FIX_DEFAULT: i32 = anim_fix::LEVEL_OFF;
 
 unsafe extern "system" fn worker_thread(_lp_param: *mut std::ffi::c_void) -> u32 {
     // The sound fix stays default-off: what it currently does (extending how
@@ -74,7 +87,7 @@ unsafe extern "system" fn worker_thread(_lp_param: *mut std::ffi::c_void) -> u32
     // animation does not depend on it -- anim_fix::on_weapon_fired is called
     // from the EV_PlaySound hook regardless of this flag.
     sound_fix::ENABLED.store(env_flag("GOLDSRC_HOOKS_FORCE_WEAPON_VOLUME", false), Ordering::Relaxed);
-    anim_fix::ENABLED.store(env_flag("GOLDSRC_HOOKS_ANIM_FIX", ANIM_FIX_DEFAULT), Ordering::Relaxed);
+    anim_fix::LEVEL.store(env_level("GOLDSRC_HOOKS_ANIM_FIX", ANIM_FIX_DEFAULT), Ordering::Relaxed);
 
     unsafe { debug::new_session_separator() };
     unsafe { debug::report("goldsrc-hooks worker thread started") };
@@ -85,9 +98,10 @@ unsafe extern "system" fn worker_thread(_lp_param: *mut std::ffi::c_void) -> u32
     // obvious from the log rather than mistaken for a broken hook.
     unsafe {
         debug::report(&format!(
-            "goldsrc-hooks: starting state -- gunshots fix: {}, animation fix: {} (env vars set the default; dodtools_hltv_gunshots_fix / dodtools_hltv_animation_fix toggle live)",
+            "goldsrc-hooks: starting state -- gunshots fix: {}, animation fix: {} ({}) (env vars set the default; dodtools_hltv_gunshots_fix / dodtools_hltv_animation_fix toggle live)",
             if sound_fix::ENABLED.load(Ordering::Relaxed) { "ON" } else { "off" },
-            if anim_fix::ENABLED.load(Ordering::Relaxed) { "ON" } else { "off" },
+            anim_fix::level(),
+            anim_fix::level_description(anim_fix::level()),
         ))
     };
 

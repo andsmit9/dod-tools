@@ -42,7 +42,7 @@
 //! and `pfnAddCommand` live on that same table.
 
 use std::ffi::{CStr, CString, c_char};
-use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicU32, Ordering};
 
 use crate::engine::{self, CvarSPartial};
 use crate::{anim_fix, sound_fix};
@@ -126,6 +126,30 @@ fn poll_flag(name: &str, cvar: &AtomicPtr<CvarSPartial>, flag: &AtomicBool) {
     }
 }
 
+/// Like `poll_flag`, but the animation fix carries an iteration number rather
+/// than a flag -- see `anim_fix::LEVEL`. Out-of-range values are clamped
+/// rather than refused, so `dodtools_hltv_animation_fix 99` is a usable way to
+/// ask for the newest behaviour without remembering what the newest is.
+fn poll_level(name: &str, cvar: &AtomicPtr<CvarSPartial>, level: &AtomicI32) {
+    let ptr = cvar.load(Ordering::Relaxed);
+    if ptr.is_null() {
+        return;
+    }
+    let raw = unsafe { (*ptr).value };
+    // A cvar is a float; anything unparseable reads as 0, which is "off" and
+    // is the safe way to land.
+    let wanted = if raw.is_finite() { raw as i32 } else { 0 };
+    let wanted = wanted.clamp(anim_fix::LEVEL_OFF, anim_fix::LEVEL_MAX);
+    if level.swap(wanted, Ordering::Relaxed) != wanted {
+        unsafe {
+            crate::debug::report(&format!(
+                "commands: {name} = {wanted} ({})",
+                anim_fix::level_description(wanted)
+            ))
+        };
+    }
+}
+
 /// The last attenuation value rejected, so a bad setting is reported once
 /// rather than sixty times a second.
 static REJECTED_ATTENUATION: AtomicU32 = AtomicU32::new(0);
@@ -167,7 +191,7 @@ pub fn poll() {
         return;
     }
     poll_flag(GUNSHOTS_FIX_NAME, &CVAR_GUNSHOTS, &sound_fix::ENABLED);
-    poll_flag(ANIMATION_FIX_NAME, &CVAR_ANIMATION, &anim_fix::ENABLED);
+    poll_level(ANIMATION_FIX_NAME, &CVAR_ANIMATION, &anim_fix::LEVEL);
     poll_flag(HELD_MODELS_NAME, &CVAR_HELD_MODELS, &anim_fix::LOG_HELD_MODELS);
     poll_attenuation();
 }
@@ -181,8 +205,9 @@ pub fn poll() {
 fn status_text() -> String {
     let on = |flag: bool| if flag { "1 (on)" } else { "0 (off)" };
     format!(
-        "{ANIMATION_FIX_NAME} = {}\n  {}\n{GUNSHOTS_FIX_NAME} = {}\n  {}\n{ATTENUATION_NAME} = {}\n{HELD_MODELS_NAME} = {}\n",
-        on(anim_fix::ENABLED.load(Ordering::Relaxed)),
+        "{ANIMATION_FIX_NAME} = {} ({})\n  {}\n{GUNSHOTS_FIX_NAME} = {}\n  {}\n{ATTENUATION_NAME} = {}\n{HELD_MODELS_NAME} = {}\n",
+        anim_fix::level(),
+        anim_fix::level_description(anim_fix::level()),
         anim_fix::status(),
         on(sound_fix::ENABLED.load(Ordering::Relaxed)),
         sound_fix::status(),
@@ -256,7 +281,56 @@ unsafe extern "C" fn cmd_gunshots_fix() {
 }
 
 unsafe extern "C" fn cmd_animation_fix() {
-    handle_toggle(ANIMATION_FIX_NAME, &anim_fix::ENABLED, anim_fix::status);
+    handle_level(ANIMATION_FIX_NAME, &anim_fix::LEVEL, anim_fix::status);
+}
+
+/// `handle_toggle` for the animation fix, which takes an iteration number
+/// instead of a flag. Only reached on the fallback path, when cvar
+/// registration failed -- the cvar itself is what normally carries this.
+fn handle_level(name: &str, level: &AtomicI32, status: fn() -> String) {
+    let Some(engfuncs) = engine::engfuncs() else { return };
+
+    let argc = unsafe { (engfuncs.cmd_argc)() };
+    let mut assigned = false;
+    if argc >= 2 {
+        let arg1 = unsafe { (engfuncs.cmd_argv)(1) };
+        if !arg1.is_null() {
+            let value = unsafe { CStr::from_ptr(arg1 as *const c_char) }.to_string_lossy();
+            match value.trim().parse::<i32>() {
+                Ok(n) => {
+                    level.store(n.clamp(anim_fix::LEVEL_OFF, anim_fix::LEVEL_MAX), Ordering::Relaxed);
+                    assigned = true;
+                }
+                Err(_) => {
+                    let max = anim_fix::LEVEL_MAX;
+                    console_print(&format!("{name}: expected 0-{max}, got \"{}\"\n", value.trim()));
+                    unsafe {
+                        crate::debug::report(&format!("commands: {name} rejected argument \"{}\"", value.trim()))
+                    };
+                    return;
+                }
+            }
+        }
+    }
+
+    let now = anim_fix::level();
+    let state = format!("{now} ({})", anim_fix::level_description(now));
+    if assigned {
+        console_print(&format!("{name} = {state}\n"));
+    } else {
+        let max = anim_fix::LEVEL_MAX;
+        let mut usage = format!("{name} = {state}\nusage: {name} <0-{max}>\n");
+        for n in anim_fix::LEVEL_OFF..=max {
+            usage.push_str(&format!("  {n}  {}\n", anim_fix::level_description(n)));
+        }
+        console_print(&format!("{usage}{}\n", status()));
+    }
+    unsafe {
+        crate::debug::report(&format!(
+            "commands: {name} = {state} ({}, argc={argc})",
+            if assigned { "set" } else { "queried, unchanged" }
+        ))
+    };
 }
 
 unsafe extern "C" fn cmd_log_held_models() {
@@ -341,7 +415,7 @@ pub fn install() {
 
     let bit = |flag: bool| if flag { "1" } else { "0" };
     let gunshots = register(GUNSHOTS_FIX_NAME, bit(sound_fix::ENABLED.load(Ordering::Relaxed)));
-    let animation = register(ANIMATION_FIX_NAME, bit(anim_fix::ENABLED.load(Ordering::Relaxed)));
+    let animation = register(ANIMATION_FIX_NAME, &anim_fix::level().to_string());
     let attenuation = register(ATTENUATION_NAME, &sound_fix::carry_attenuation().to_string());
     let held_models = register(HELD_MODELS_NAME, bit(anim_fix::LOG_HELD_MODELS.load(Ordering::Relaxed)));
 
