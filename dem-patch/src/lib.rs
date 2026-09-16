@@ -113,14 +113,72 @@ macro_rules! nbit_str {
 mod test {
     use super::*;
 
+    /// Regenerates `./src/tests/demotest.dem`, the small tracked fixture the
+    /// four tests below need. Not run automatically -- there is nothing to
+    /// regenerate *from*, this constructs a minimal demo entirely in code
+    /// rather than trimming a real recording, so running it again only
+    /// matters if the on-disk format itself changes.
+    ///
+    /// A real DoD/HLTV demo carries thousands of frames; this carries three
+    /// -- DemoStart, one ConsoleCommand, NextSection -- which is the smallest
+    /// shape `parse_directory`/`write_to_bytes` actually round-trip: a
+    /// `NetworkMessage` frame needs a fully populated `DemoInfo` (ref params,
+    /// usercmd, movevars, ...) for no benefit here, since these tests exist to
+    /// exercise open/write/parse-mode plumbing, not to be a realistic demo.
+    /// `frame_count`/`frame_offset`/`file_length`/`directory_offset` are left
+    /// at 0 -- `Demo::write_to_bytes` recomputes all four from the actual
+    /// frames and byte offsets rather than trusting these fields, which is
+    /// also why a hand-built `Demo` can produce a valid file at all.
     #[test]
-    #[ignore = "needs ./src/tests/demotest.dem, a local fixture not committed to the repo"]
+    #[ignore = "regenerates the tracked fixture; run manually with `cargo test -p dem --lib test::regenerate_fixture -- --ignored`"]
+    fn regenerate_fixture() {
+        use crate::types::{ConsoleCommand, Directory, DirectoryEntry, Frame, FrameData, Header};
+
+        let demo = Demo {
+            header: Header {
+                magic: b"HLDEMO\x00\x00".to_vec(),
+                demo_protocol: 5,
+                network_protocol: 48,
+                map_name: "dod_test".into(),
+                game_directory: "dod".into(),
+                map_checksum: 0,
+                directory_offset: 0,
+            },
+            directory: Directory {
+                entries: vec![DirectoryEntry {
+                    type_: 1,
+                    description: "fixture".into(),
+                    flags: 0,
+                    cd_track: 0,
+                    track_time: 0.0,
+                    frame_count: 0,
+                    frame_offset: 0,
+                    file_length: 0,
+                    frames: vec![
+                        Frame { time: 0.0, frame: 0, frame_data: FrameData::DemoStart },
+                        Frame {
+                            time: 0.0,
+                            frame: 0,
+                            frame_data: FrameData::ConsoleCommand(ConsoleCommand {
+                                command: "echo dem-patch test fixture".into(),
+                            }),
+                        },
+                        Frame { time: 0.0, frame: 1, frame_data: FrameData::NextSection },
+                    ],
+                }],
+            },
+            _aux: None,
+        };
+
+        demo.write_to_file("./src/tests/demotest.dem").unwrap();
+    }
+
+    #[test]
     fn open() {
         open_demo("./src/tests/demotest.dem").unwrap();
     }
 
     #[test]
-    #[ignore = "needs ./src/tests/demotest.dem, a local fixture not committed to the repo"]
     fn open_without_netmessage() {
         Demo::parse_from_file(
             "./src/tests/demotest.dem",
@@ -130,14 +188,12 @@ mod test {
     }
 
     #[test]
-    #[ignore = "needs ./src/tests/demotest.dem, a local fixture not committed to the repo"]
     fn write() {
         let dem = open_demo("./src/tests/demotest.dem").unwrap();
         dem.write_to_file("./src/tests/demotest_out.dem").unwrap();
     }
 
     #[test]
-    #[ignore = "needs a populated ./src/tests/ folder, not committed to the repo"]
     fn read_a_lot() {
         let folder = "./src/tests/";
 
