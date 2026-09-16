@@ -780,16 +780,22 @@ mod tests {
         exe.to_string_lossy().to_string()
     }
 
-    /// Same shape again, movie.cfg assigning `r_drawentities` to a value
-    /// other than 1 -- DoD's own client quits the game over this every
-    /// rendered frame (`cfg_scan::FATAL_CVARS`).
-    fn fake_game_with_r_drawentities(tag: &str, value: &str) -> String {
+    /// Same shape again, movie.cfg assigning `r_drawentities` to a value other
+    /// than 1. Only fatal when the config also turns cheats on: while
+    /// `sv_cheats` is 0 GoldSrc clamps the cvar back itself and DoD's client
+    /// never sees the value (`cfg_scan::FatalCvar::needs_sv_cheats`).
+    fn fake_game_with_r_drawentities(tag: &str, value: &str, cheats: bool) -> String {
         let root = std::env::temp_dir().join(format!("dod_cfgrep_fatal_{}_{}", tag, std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
         std::fs::write(dod.join("config.cfg"), "exec movie.cfg\n").unwrap();
-        std::fs::write(dod.join("movie.cfg"), format!("r_drawentities \"{}\"\n", value)).unwrap();
+        let cheat_line = if cheats { "sv_cheats \"1\"\n" } else { "" };
+        std::fs::write(
+            dod.join("movie.cfg"),
+            format!("{}r_drawentities \"{}\"\n", cheat_line, value),
+        )
+        .unwrap();
         let exe = root.join("hl.exe");
         std::fs::write(&exe, b"").unwrap();
         exe.to_string_lossy().to_string()
@@ -984,7 +990,7 @@ mod tests {
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
         let r = rt
             .block_on(scan_game_configs(
-                fake_game_with_r_drawentities("fatal_config", "0"),
+                fake_game_with_r_drawentities("fatal_config", "0", true),
                 vec![],
                 vec![],
                 Some(120),
@@ -1000,11 +1006,30 @@ mod tests {
     }
 
     #[test]
+    fn r_drawentities_without_sv_cheats_is_not_reported_as_fatal() {
+        // The engine clamps it back to 1.0 on its own, so the line is inert
+        // and flagging it would block a capture over nothing. Confirmed live:
+        // setting r_drawentities with cheats off does not close the game.
+        let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
+        let r = rt
+            .block_on(scan_game_configs(
+                fake_game_with_r_drawentities("fatal_no_cheats", "0", false),
+                vec![],
+                vec![],
+                Some(120),
+                Some(true),
+            ))
+            .unwrap();
+
+        assert!(r.fatal_cvars.is_empty(), "{:?}", r.fatal_cvars);
+    }
+
+    #[test]
     fn a_config_setting_r_drawentities_to_one_is_not_reported_as_fatal() {
         let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build().unwrap();
         let r = rt
             .block_on(scan_game_configs(
-                fake_game_with_r_drawentities("fatal_config_ok", "1"),
+                fake_game_with_r_drawentities("fatal_config_ok", "1", true),
                 vec![],
                 vec![],
                 Some(120),
