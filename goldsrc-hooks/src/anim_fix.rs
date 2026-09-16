@@ -625,46 +625,35 @@ static SETTLED_VIEWMODEL: AtomicPtr<ModelSPartial> = AtomicPtr::new(std::ptr::nu
 /// immediately does not produce a second one.
 static LAST_DRAW_TRIGGERED: AtomicU64 = AtomicU64::new(0);
 
-/// How long a viewmodel has to hold still before it counts as the weapon in
-/// hand.
-///
-/// Deliberately small -- about three frames. It exists only to coalesce a
-/// viewmodel that changes and changes back inside a frame or two, not to
-/// second-guess the player.
-///
-/// It was 0.4s, on the theory that rapid weapon churn was engine noise worth
-/// suppressing. That was wrong twice over. The weapon it was blamed for (the
-/// STG44 never drawing) was really `VIEWMODEL_ALIASES` discarding every frame
-/// for that weapon; and the churn is not noise -- the spectated player's *body
-/// sequence* changes on the same frame as the held model, `stand_pistol_aim`
-/// <-> `stand_rifle_aim` tracking `p_colt` <-> `p_garand`, which no engine
-/// artifact in the viewmodel could do. It is somebody switching weapons that
-/// fast, which is ordinary in DoD.
-///
-/// So the faithful behaviour is the one a POV recording would show: a draw per
-/// switch, each cut short by the next. At 0.4s a kar-to-pistol-to-kar flick --
-/// common, and reported from live testing -- produced no draw at all, because
-/// neither weapon was held long enough to settle.
-const VIEWMODEL_SETTLE_SECONDS: f64 = 0.05;
 
 /// Whether the viewmodel just changed to a different weapon.
 ///
 /// Fires on the **leading** edge -- the first frame the weapon differs -- not
 /// after the window has elapsed. That distinction is the whole point: waiting
 /// for the viewmodel to hold still meant every draw played
-/// `VIEWMODEL_SETTLE_SECONDS` late, which is exactly what a live session
+/// the settle window late, which is exactly what a live session
 /// showed. Measured over one HLTV demo, 84 of 84 draws landed 0.054-0.055s
 /// after the weapon changed, with no variance at all -- the window itself,
 /// plus a frame. It read in-game as switching a gun and seeing no draw, then
 /// the animation starting a moment later.
 ///
-/// The window still does its original job, just from the other side: once a
-/// draw is triggered, another cannot be for that long, so a weapon that
-/// changes and changes straight back is coalesced into the one draw rather
-/// than two. What it can no longer do is suppress a switch entirely -- a
-/// leading-edge trigger has no lookahead, so a flap is one draw, not none.
-/// That is the right trade for this: a spurious draw is a frame of the wrong
-/// animation, whereas a missing one is the bug being fixed.
+/// There is no time-based guard against re-triggering either, because the
+/// pointer comparison above already is one: a weapon that does not change
+/// cannot report twice, however many frames it is held for.
+///
+/// A cooldown was tried and removed the same day. It swallowed real switches,
+/// and the reason is worth keeping: DoD's engine passes *through* a weapon
+/// slot while switching. In one measured session a player alternating MP40 and
+/// stick grenade produced a spade in between, held for 18ms, 25ms, 36ms and
+/// 61ms -- nobody selects a shovel for eighteen milliseconds. The spade flash
+/// claimed the draw and the real MP40 draw, arriving inside the cooldown, was
+/// suppressed. Lowering the threshold only moves which of the two is lost.
+///
+/// So every change draws, and a transient one is simply cut short by the next
+/// -- which is what a POV recording of the same input shows, and what this
+/// check was aiming at all along. It had a settling delay before this
+/// (`VIEWMODEL_SETTLE_SECONDS`, 0.05s, and 0.4s before that); both are gone,
+/// for the reasons above.
 fn viewmodel_changed_to_a_new_weapon(current: *mut ModelSPartial, now: f64) -> bool {
     let previous = SETTLED_VIEWMODEL.swap(current, Ordering::Relaxed);
     if previous == current {
@@ -673,12 +662,6 @@ fn viewmodel_changed_to_a_new_weapon(current: *mut ModelSPartial, now: f64) -> b
     // Nothing to draw *from* on the first weapon ever seen -- that is the
     // spectator arriving, not a switch.
     if previous.is_null() {
-        return false;
-    }
-    let last = f64::from_bits(LAST_DRAW_TRIGGERED.load(Ordering::Relaxed));
-    if now >= last && now - last < VIEWMODEL_SETTLE_SECONDS {
-        // Inside the window of a draw already playing: adopt the new weapon
-        // silently rather than restarting the animation.
         return false;
     }
     LAST_DRAW_TRIGGERED.store(now.to_bits(), Ordering::Relaxed);
@@ -1287,22 +1270,24 @@ mod tests {
     /// The window still exists to absorb a viewmodel that changes and changes
     /// back within a frame or two, which should read as no switch at all.
     #[test]
-    fn a_single_frame_blip_draws_once_and_not_twice() {
+    fn a_weapon_that_only_flashes_past_does_not_swallow_the_next_draw() {
         let (a, b) = (std::ptr::without_provenance_mut::<ModelSPartial>(1), std::ptr::without_provenance_mut::<ModelSPartial>(2));
+        let c = std::ptr::without_provenance_mut::<ModelSPartial>(3);
         reset_settle_state();
         assert!(!viewmodel_changed_to_a_new_weapon(a, 0.0), "the first weapon seen is not a switch");
-        assert!(!viewmodel_changed_to_a_new_weapon(a, 1.0));
 
-        // b appears for one frame, then a is back.
-        //
-        // This used to assert *neither* reported. That was only possible
-        // because the old check waited out the window before deciding, which
-        // is the delay this trigger exists to remove -- a leading edge has no
-        // lookahead, so the frame b appears is indistinguishable from the
-        // start of a real switch. One draw is the honest answer.
-        assert!(viewmodel_changed_to_a_new_weapon(b, 1.016), "b is a different weapon");
-        // ... but the flap back must not restart it a second time.
-        assert!(!viewmodel_changed_to_a_new_weapon(a, 1.032), "flap back inside the window");
+        // The real case this comes from: DoD passes through a weapon slot on
+        // the way to another one. A player alternating MP40 and stick grenade
+        // put a spade in between for 18-61ms. Every one of these is a change
+        // and every one draws -- a transient is cut short by the next, which
+        // is what a POV recording of the same input shows.
+        assert!(viewmodel_changed_to_a_new_weapon(b, 1.000), "flashed-past weapon");
+        assert!(viewmodel_changed_to_a_new_weapon(c, 1.018), "18ms later -- must not be swallowed");
+        assert!(viewmodel_changed_to_a_new_weapon(b, 1.043), "25ms later -- nor this");
+
+        // What must still never happen: the same weapon reporting twice.
+        assert!(!viewmodel_changed_to_a_new_weapon(b, 1.044));
+        assert!(!viewmodel_changed_to_a_new_weapon(b, 9.999));
     }
 
     #[test]
@@ -1320,7 +1305,7 @@ mod tests {
 
         // And only once -- it must not restart every frame afterwards, inside
         // the window or long past it.
-        assert!(!viewmodel_changed_to_a_new_weapon(b, 1.0 + VIEWMODEL_SETTLE_SECONDS / 2.0));
+        assert!(!viewmodel_changed_to_a_new_weapon(b, 1.025));
         for i in 1..10 {
             let t = 1.0 + i as f64 * 0.1;
             assert!(!viewmodel_changed_to_a_new_weapon(b, t), "re-reported at t={t}");
@@ -1342,7 +1327,7 @@ mod tests {
         // No draw for it, now or once the old window would have expired --
         // which is exactly where the stale timer used to produce one.
         assert!(!viewmodel_changed_to_a_new_weapon(b, 0.1));
-        assert!(!viewmodel_changed_to_a_new_weapon(b, 0.1 + VIEWMODEL_SETTLE_SECONDS * 2.0));
+        assert!(!viewmodel_changed_to_a_new_weapon(b, 0.2));
 
         // A genuine switch afterwards still draws.
         assert!(viewmodel_changed_to_a_new_weapon(a, 1.0));
