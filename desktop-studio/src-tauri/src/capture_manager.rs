@@ -29,7 +29,26 @@ const PATCH_CONCURRENCY: usize = 4;
 /// `native::warm_analyzer_cache` writes to a per-demo-path cache file, not a
 /// single shared one, so concurrent writes for different demos don't
 /// collide), so it is bounded with a fixed worker pool the same way. See #195.
-const SCAN_CONCURRENCY: usize = 4;
+///
+/// Two, not four, and deliberately lower than `PATCH_CONCURRENCY`: a parse
+/// holds a whole `Analysis` in memory, which measures roughly 14x the demo's
+/// own size, so concurrency here multiplies something already large. Measured
+/// over a 45-demo corpus (3.2GB, 72MB mean, 105MB largest) with
+/// `native/examples/scan_mem_probe.rs`:
+///
+/// | workers | wall time | peak working set |
+/// | ------- | --------- | ---------------- |
+/// | 1       | 56.2s     | 1529 MB          |
+/// | 2       | 40.8s     | 2414 MB          |
+/// | 4       | 36.0s     | 4574 MB          |
+/// | 8       | 49.7s     | 9157 MB          |
+///
+/// Four buys 1.56x the speed for 3x the memory; two gets 1.38x for 1.6x.
+/// Eight is slower *and* uses 9GB, which is what says the ceiling here is
+/// memory pressure rather than CPU. This is a desktop app that may be running
+/// alongside the game, so the last 4.8 seconds is not worth 2.2GB. Patching
+/// stays at 4 because it streams frames rather than holding a full analysis.
+const SCAN_CONCURRENCY: usize = 2;
 
 use native::patch::{PatcherConfig, CaptureStreak, CaptureBlock, PatchJob, StreamPatcher, build_batch_queue, build_preview_patch_jobs, CustomCommand, CommandRelation};
 use native::capture_engine::{spawn_capture_engine, CaptureJob, EngineEvent};
