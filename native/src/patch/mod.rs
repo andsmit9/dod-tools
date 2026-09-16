@@ -70,6 +70,8 @@ pub mod bsp;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bsp_entities;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod reachability;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod cfg_scan;
 pub mod map_check;
 #[cfg(not(target_arch = "wasm32"))]

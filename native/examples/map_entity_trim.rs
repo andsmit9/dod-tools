@@ -100,6 +100,26 @@ fn submodel_area(bsp: &Bsp, submodel: u32) -> f32 {
     (first..first + count).map(|f| bsp.face_area(f)).sum()
 }
 
+/// A submodel's axis-aligned bounds, unioned across its own faces -- the same
+/// face range `submodel_area` sums, just tracking extent instead of area.
+fn submodel_bounds(bsp: &Bsp, submodel: u32) -> Option<([f32; 3], [f32; 3])> {
+    let model = bsp.models.get(submodel as usize)?;
+    let first = model.first_face.max(0) as usize;
+    let count = model.num_faces.max(0) as usize;
+    let mut lo = [f32::INFINITY; 3];
+    let mut hi = [f32::NEG_INFINITY; 3];
+    let mut any = false;
+    for f in first..first + count {
+        let (flo, fhi) = bsp.face_bounds(f);
+        for a in 0..3 {
+            lo[a] = lo[a].min(flo[a]);
+            hi[a] = hi[a].max(fhi[a]);
+        }
+        any = true;
+    }
+    any.then_some((lo, hi))
+}
+
 fn dominant_texture(bsp: &Bsp, submodel: u32) -> String {
     let Some(model) = bsp.models.get(submodel as usize) else { return "<none>".into() };
     let first = model.first_face.max(0) as usize;
@@ -137,6 +157,7 @@ fn main() {
     let mut target: usize = 215;
     let mut strip_path: Option<String> = None;
     let mut out_path: Option<String> = None;
+    let mut demos_dir: Option<String> = None;
 
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -144,6 +165,7 @@ fn main() {
             "--target" => target = args.next().and_then(|v| v.parse().ok()).unwrap_or(target),
             "--strip" => strip_path = args.next(),
             "--out" => out_path = args.next(),
+            "--demos" => demos_dir = args.next(),
             other => map_path = Some(other.to_string()),
         }
     }
@@ -157,6 +179,24 @@ fn main() {
     let checksum = map_checksum(&bytes).unwrap_or_else(|e| fail(&e));
     let bsp = Bsp::parse(&bytes).unwrap_or_else(|e| fail(&e));
     let entities = parse_entities(&bytes).unwrap_or_else(|e| fail(&e));
+
+    // Where players have actually been, harvested from real demos of the map --
+    // a tier-C candidate far from every one of these points is safe to remove
+    // with much more confidence than face area alone can offer. Optional: with
+    // no directory given, tier C falls back to its original area-only ranking.
+    let map_name = std::path::Path::new(&map_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_else(|| fail("map path has no usable file name"))
+        .to_string();
+    let reach = demos_dir.as_deref().map(|dir| {
+        native::patch::reachability::harvest_directory(std::path::Path::new(dir), checksum, &map_name)
+            .unwrap_or_else(|e| fail(&e))
+    });
+    if let Some(cloud) = &reach {
+        eprintln!("reachability: {} proven player positions harvested from {}",
+            cloud.len(), demos_dir.as_deref().unwrap_or(""));
+    }
 
     if let Some(strip_path) = strip_path {
         apply(&map_path, &bytes, checksum, &entities, &strip_path, out_path.as_deref());
@@ -179,14 +219,14 @@ fn main() {
 
     if propose {
         eprintln!("{summary}");
-        emit_proposal(&map_path, checksum, &bsp, &entities, &on_wire, target);
+        emit_proposal(&map_path, checksum, &bsp, &entities, &on_wire, target, reach.as_ref());
     } else {
         println!("{summary}");
-        report(&bsp, &entities, &on_wire);
+        report(&bsp, &entities, &on_wire, reach.as_ref());
     }
 }
 
-fn report(bsp: &Bsp, entities: &[MapEntity], on_wire: &[usize]) {
+fn report(bsp: &Bsp, entities: &[MapEntity], on_wire: &[usize], reach: Option<&std::collections::HashSet<(i32, i32, i32)>>) {
     let mut by_class: std::collections::BTreeMap<&str, usize> = Default::default();
     for i in on_wire {
         *by_class.entry(entities[*i].classname()).or_default() += 1;
@@ -208,18 +248,70 @@ fn report(bsp: &Bsp, entities: &[MapEntity], on_wire: &[usize]) {
         }
     }
 
-    println!("\nfunc_illusionary by face area (non-solid: removing one cannot change collision):");
-    let mut rows: Vec<(f32, usize, u32, String)> = on_wire
+    let heading = if reach.is_some() {
+        "\nfunc_illusionary, farthest from any proven player position first \
+         (non-solid: removing one cannot change collision):"
+    } else {
+        "\nfunc_illusionary by face area (non-solid: removing one cannot change collision):"
+    };
+    println!("{heading}");
+    let mut rows = illusionary_rows(bsp, entities, on_wire, reach);
+    sort_illusionary_rows(&mut rows, reach.is_some());
+    for row in &rows {
+        match row.distance {
+            Some(d) => println!(
+                "  lump#{:<4} *{:<4} area={:>10.0}  distance={d:>8.0}{}  {}",
+                row.lump_index, row.submodel, row.area,
+                if row.background { "  (background)" } else { "" },
+                row.texture,
+            ),
+            None => println!("  lump#{:<4} *{:<4} area={:>10.0}  {}", row.lump_index, row.submodel, row.area, row.texture),
+        }
+    }
+}
+
+struct IllusionaryRow {
+    lump_index: usize,
+    submodel: u32,
+    area: f32,
+    texture: String,
+    distance: Option<f32>,
+    background: bool,
+}
+
+fn illusionary_rows(
+    bsp: &Bsp,
+    entities: &[MapEntity],
+    on_wire: &[usize],
+    reach: Option<&std::collections::HashSet<(i32, i32, i32)>>,
+) -> Vec<IllusionaryRow> {
+    on_wire
         .iter()
         .filter(|i| entities[**i].classname() == "func_illusionary")
         .filter_map(|i| {
             let s = entities[*i].brush_submodel()?;
-            Some((submodel_area(bsp, s), *i, s, dominant_texture(bsp, s)))
+            let area = submodel_area(bsp, s);
+            let texture = dominant_texture(bsp, s);
+            let (distance, background) = match (reach, submodel_bounds(bsp, s)) {
+                (Some(cloud), Some((lo, hi))) => {
+                    let d = native::patch::reachability::distance_to_nearest_player(cloud, lo, hi);
+                    (Some(d), native::patch::reachability::reads_as_background(d, lo, hi))
+                }
+                _ => (None, false),
+            };
+            Some(IllusionaryRow { lump_index: *i, submodel: s, area, texture, distance, background })
         })
-        .collect();
-    rows.sort_by(|a, b| a.0.total_cmp(&b.0));
-    for (area, i, submodel, tex) in &rows {
-        println!("  lump#{i:<4} *{submodel:<4} area={area:>10.0}  {tex}");
+        .collect()
+}
+
+/// Farthest-from-any-proven-position first when a harvest is available (the
+/// stronger, more confident signal); otherwise the original smallest-area
+/// first, unchanged from before this ranking existed.
+fn sort_illusionary_rows(rows: &mut [IllusionaryRow], have_reach: bool) {
+    if have_reach {
+        rows.sort_by(|a, b| b.distance.unwrap_or(0.0).total_cmp(&a.distance.unwrap_or(0.0)));
+    } else {
+        rows.sort_by(|a, b| a.area.total_cmp(&b.area));
     }
 }
 
@@ -230,6 +322,7 @@ fn emit_proposal(
     entities: &[MapEntity],
     on_wire: &[usize],
     target: usize,
+    reach: Option<&std::collections::HashSet<(i32, i32, i32)>>,
 ) {
     let mut candidates: Vec<Candidate> = Vec::new();
 
@@ -275,10 +368,16 @@ fn emit_proposal(
     println!("# tier A -- on the wire, not on the screen. Removing these changes");
     println!("#           nothing visible; brush ones also stop blocking movement.");
     println!("# tier B -- atmosphere sprites. A visible change, no collision change.");
-    println!("# tier C -- func_illusionary, commented out below, ranked smallest first.");
+    println!("# tier C -- func_illusionary, commented out below, ranked {}.",
+        if reach.is_some() { "farthest from any proven player position first" } else { "smallest first" });
     println!("#           Non-solid, so removal cannot change collision -- but each one");
     println!("#           is real geometry a viewer would notice missing. Uncomment what");
     println!("#           you accept.");
+    if reach.is_some() {
+        println!("#           \"reach\" is how far past the point every player in the demos");
+        println!("#           fed to --demos actually stood -- \"(background)\" means it clears");
+        println!("#           the size-scaled margin this tool guesses at, not a proven fact.");
+    }
     println!();
 
     for c in &candidates {
@@ -286,15 +385,8 @@ fn emit_proposal(
     }
 
     println!("\n# ---- tier C candidates ----");
-    let mut rows: Vec<(f32, usize, u32, String)> = on_wire
-        .iter()
-        .filter(|i| entities[**i].classname() == "func_illusionary")
-        .filter_map(|i| {
-            let s = entities[*i].brush_submodel()?;
-            Some((submodel_area(bsp, s), *i, s, dominant_texture(bsp, s)))
-        })
-        .collect();
-    rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut rows = illusionary_rows(bsp, entities, on_wire, reach);
+    sort_illusionary_rows(&mut rows, reach.is_some());
 
     // How many tier C lines it takes to reach the target, plus a margin, so
     // vetoing one does not mean regenerating the list.
@@ -303,14 +395,18 @@ fn emit_proposal(
     let listed = (needed + MARGIN).min(rows.len());
 
     let mut floor = floor_after_ab;
-    for (n, (area, i, submodel, tex)) in rows.iter().take(listed).enumerate() {
+    for (n, row) in rows.iter().take(listed).enumerate() {
         if n == needed {
             println!("# ---- target reached above; the rest are spare ----");
         }
         floor = floor.saturating_sub(1);
+        let reach_note = match row.distance {
+            Some(d) => format!(" reach={d:.0}{}", if row.background { " (background)" } else { "" }),
+            None => String::new(),
+        };
         println!(
-            "# {i:<5} {:<22} # tier C -- *{submodel} area={area:.0} {tex}; would reach {floor}",
-            "func_illusionary"
+            "# {:<5} {:<22} # tier C -- *{} area={:.0}{reach_note} {}; would reach {floor}",
+            row.lump_index, "func_illusionary", row.submodel, row.area, row.texture,
         );
     }
     if listed < rows.len() {
