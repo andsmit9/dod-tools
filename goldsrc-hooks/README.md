@@ -13,8 +13,16 @@ Two independent fixes, each off by default and toggled by its own env var:
 - **Animation fix** (`GOLDSRC_HOOKS_ANIM_FIX=1`): corrects MG42/MG34/BAR/Bren
   viewmodel deploy (bipod up/down) animations while spectating in-eye.
 
-Both live in one DLL since they share the same engine-interface bootstrap;
-set only the env var for whichever one you want active.
+Plus one control surface, always available and doing nothing until used:
+
+- **Death notices** (`dodtools_deathmsg`): raises DoD's hard-coded four-line
+  cap on the kill feed, moves it down the screen, hides frags involving chosen
+  players, or injects one by hand. HLAE's `mirv_deathmsg` supports only
+  `cstrike` and `tfc`, so none of it works for DoD -- see
+  `docs/goldsrc_death_notices.md`.
+
+All three live in one DLL since they share the same engine-interface bootstrap;
+set only the env var for whichever fix you want active.
 
 ## Building
 
