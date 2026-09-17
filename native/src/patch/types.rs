@@ -198,7 +198,7 @@ impl CaptureStreak {
 /// in — i.e. positions in the dispatched capture payload.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CaptureBlock {
-    /// Chained demo name this block belongs to, e.g. `chain_01`.
+    /// Chained demo name this block belongs to, e.g. `dodtools_chain_01`.
     pub demo_name: String,
     /// Index into the job's merged blocks; matches the `_route_{N}` alias and
     /// the `_b{N}` suffix on the take folder.
@@ -811,7 +811,7 @@ mod launch_args_tests {
         // last two used to get no alpha flags at all, so a hand-driven session
         // that enabled separate HUD in the console wrote an all-white
         // `hudalpha` — an opaque matte, silently unusable. Pin all three.
-        for extra in ["-condebug +exec dodtools_helper.cfg +playdemo primer", "+viewdemo stem", ""] {
+        for extra in ["-condebug +exec dodtools_helper.cfg +playdemo dodtools_primer", "+viewdemo stem", ""] {
             let line = cmd_line_of(&PatcherConfig::default(), extra);
             assert!(
                 line.contains("-afxForceAlpha8 1"),
@@ -833,7 +833,7 @@ mod launch_args_tests {
         // used to be a checkbox; there is deliberately no longer any way to
         // launch without it. See #226.
         let cfg = PatcherConfig::default();
-        for extra in ["", "+viewdemo foo", "+exec dodtools_helper.cfg +playdemo primer"] {
+        for extra in ["", "+viewdemo foo", "+exec dodtools_helper.cfg +playdemo dodtools_primer"] {
             let line = cmd_line_of(&cfg, extra);
             assert!(
                 line.contains("-condebug"),
@@ -847,7 +847,7 @@ mod launch_args_tests {
         // GoldSrc parses `-` switches off the command line and queues `+`
         // commands after; an alpha flag landing after a `+` would be read as
         // an argument to that command instead of a switch.
-        let line = cmd_line_of(&PatcherConfig::default(), "+playdemo primer");
+        let line = cmd_line_of(&PatcherConfig::default(), "+playdemo dodtools_primer");
         let first_plus = line.find('+').expect("the console command is present");
         let alpha = line.find("-afxForceAlpha8").expect("the alpha flag is present");
         assert!(alpha < first_plus, "alpha flag must precede any +command: {line}");
@@ -859,7 +859,7 @@ mod launch_args_tests {
         // switch placed after them is parsed as their argument rather than as a
         // switch. Keeping -condebug ahead of `extra_engine_args` is what stops
         // that, and nothing else in the process would report it.
-        let line = cmd_line_of(&PatcherConfig::default(), "+playdemo primer");
+        let line = cmd_line_of(&PatcherConfig::default(), "+playdemo dodtools_primer");
         let condebug = line.find("-condebug").expect("-condebug present");
         let playdemo = line.find("+playdemo").expect("+playdemo present");
         assert!(
