@@ -1,4 +1,4 @@
-//! `dodtools_deathmsg` — control over DoD 1.3's death notices (the kill feed).
+//! `dodstudio_deathmsg` — control over DoD 1.3's death notices (the kill feed).
 //!
 //! HLAE ships `mirv_deathmsg` with the same four subcommands, but only for
 //! `cstrike` and `tfc`: its pattern database names them explicitly

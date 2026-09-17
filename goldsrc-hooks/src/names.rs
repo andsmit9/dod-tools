@@ -1,7 +1,7 @@
 //! The one place this DLL's console prefix is spelled.
 //!
 //! Every cvar and command it registers goes through [`console_name`], so
-//! renaming the whole surface — `dodtools_` to anything else — is a single edit
+//! renaming the whole surface — `dodstudio_` to anything else — is a single edit
 //! here rather than a hunt through five files for string literals that happen
 //! to start the same way.
 //!
@@ -25,11 +25,11 @@
 /// Builds a console name from the shared prefix.
 ///
 /// ```ignore
-/// const STATUS: &str = console_name!("status");   // "dodtools_status"
+/// const STATUS: &str = console_name!("status");   // "dodstudio_status"
 /// ```
 macro_rules! console_name {
     ($suffix:literal) => {
-        concat!("dodtools_", $suffix)
+        concat!("dodstudio_", $suffix)
     };
 }
 

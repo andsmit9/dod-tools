@@ -112,7 +112,7 @@ pub const LEVEL_MAX: i32 = LEVEL_LOOKAHEAD;
 /// empty for anything like the 3.5s option 1 produced.
 const LOOKAHEAD_SECONDS: f64 = 1.0;
 
-/// What each option is, for `dodtools_status` and the startup line.
+/// What each option is, for `dodstudio_status` and the startup line.
 pub fn level_description(level: i32) -> &'static str {
     match level {
         LEVEL_OFF => "off",
@@ -850,7 +850,7 @@ const STAGE_VIEWMODEL_MISMATCH: i32 = 8;
 
 fn stage_name(stage: i32) -> &'static str {
     match stage {
-        STAGE_DISABLED => "disabled (dodtools_hltv_animation_fix is 0)",
+        STAGE_DISABLED => "disabled (dodstudio_hltv_animation_fix is 0)",
         STAGE_NO_ENGFUNCS => "waiting for engfuncs",
         STAGE_NOT_SPECTATING => "not spectating (IsSpectateOnly() is false) -- the fix only acts in a spectated view",
         STAGE_NO_VIEWMODEL_ENTITY => "no viewmodel entity",
@@ -899,7 +899,7 @@ fn stage_with<A, B>(stage: i32, entity: *mut A, model: *mut B, index: i32) {
     };
 }
 
-/// One-line summary for the `dodtools_hltv_animation_fix` status reply.
+/// One-line summary for the `dodstudio_hltv_animation_fix` status reply.
 pub fn status() -> String {
     let seen = SEEN_VIEWMODELS.lock().unwrap();
     let count = seen.as_ref().map(|s| s.len()).unwrap_or(0);
@@ -1559,7 +1559,7 @@ mod tests {
         }
     }
 
-    /// Every option in range needs its own description -- `dodtools_status`
+    /// Every option in range needs its own description -- `dodstudio_status`
     /// and the usage text are how a session tells them apart.
     #[test]
     fn every_option_is_described_distinctly() {

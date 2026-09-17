@@ -52,7 +52,7 @@ const ATTN_NORM: f32 = 0.8;
 /// the audible limit around 3300 units instead of `ATTN_NORM`'s ~1250 -- far
 /// enough to hear a firefight across a DoD map, while still falling off with
 /// distance and keeping its direction. Tunable live via
-/// `dodtools_hltv_gunshot_attenuation`; stored as bits because there is no
+/// `dodstudio_hltv_gunshot_attenuation`; stored as bits because there is no
 /// `AtomicF32`.
 static CARRY_ATTENUATION: AtomicU32 = AtomicU32::new(0x3E99_999A); // 0.3f32
 
@@ -83,7 +83,7 @@ static BOOSTED: AtomicU32 = AtomicU32::new(0);
 static SKIPPED_NOT_SPECTATING: AtomicU32 = AtomicU32::new(0);
 
 /// One-line summary of what the hook has actually done this session, for the
-/// `dodtools_hltv_gunshots_fix` status reply.
+/// `dodstudio_hltv_gunshots_fix` status reply.
 pub fn status() -> String {
     format!(
         "sounds seen: {}, weapon-fire samples: {}, extended: {}, skipped (not spectating): {}, carry attenuation: {} (game default {ATTN_NORM})",
