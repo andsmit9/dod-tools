@@ -1,0 +1,35 @@
+[package]
+name = "goldsrc-hooks"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+# The shipped filename. Cargo derives the artifact name from `[lib] name`, so
+# dev and installed builds agree on it.
+#
+# Snake case on purpose: this doubles as the crate name, and anything else --
+# including the `dodtoolsHookGoldSrc` this used to be, which echoed HLAE's
+# `AfxHookGoldSrc.dll` -- trips rustc's `non_snake_case`, whose only remedy is a
+# crate-wide `allow` that would also hide genuinely bad names inside the crate.
+# The product prefix earns its place here because the DLL lands in `hl.exe`'s
+# module list beside other people's: see `names.rs` on where `dodstudio_`
+# belongs. The package and directory stay `goldsrc-hooks` -- our own namespace,
+# and no sibling crate carries a prefix.
+name = "dodstudio_goldsrc_hooks"
+crate-type = ["cdylib"]
+
+[dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_Foundation",
+    "Win32_System_Memory",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Threading",
+    "Win32_System_SystemServices",
+    "Win32_System_SystemInformation",
+    "Win32_System_Console",
+    "Win32_Security",
+    "Win32_System_Diagnostics_Debug",
+    # AddVectoredExceptionHandler and EXCEPTION_POINTERS live behind this one
+    # rather than the Debug feature that names them -- see src/crash.rs.
+    "Win32_System_Kernel",
+] }

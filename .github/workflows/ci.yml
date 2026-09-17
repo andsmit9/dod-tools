@@ -23,8 +23,22 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-pc-windows-msvc
 
       - uses: Swatinem/rust-cache@v2
+
+      # desktop-studio's build script validates every `bundle.resources` entry
+      # in tauri.conf.json exists on disk, and one of them is this 32-bit
+      # companion DLL (goldsrc-hooks/README.md). GoldSrc is a 32-bit engine, so
+      # it needs its own cross-build; the rest of the app is native 64-bit.
+      #
+      # Without this the WHOLE WORKSPACE fails to build here, not just the DLL's
+      # own target -- a missing resource fails desktop-studio's build script,
+      # and that gates the crate. `--release` because the resource path names
+      # the release profile, matching release_experimental.yml / release_stable.yml.
+      - name: Build goldsrc-hooks (32-bit DoD/GoldSrc companion DLL)
+        run: cargo build -p goldsrc-hooks --release --target i686-pc-windows-msvc
 
       - name: cargo test --workspace
         run: cargo test --workspace
@@ -53,8 +67,21 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: clippy
+          targets: i686-pc-windows-msvc
 
       - uses: Swatinem/rust-cache@v2
+
+      # desktop-studio's build script validates every `bundle.resources` entry
+      # in tauri.conf.json exists on disk, and one of them is this 32-bit
+      # companion DLL (goldsrc-hooks/README.md). GoldSrc is a 32-bit engine, so
+      # it needs its own cross-build; the rest of the app is native 64-bit.
+      #
+      # Without this the WHOLE WORKSPACE fails to build here, not just the DLL's
+      # own target -- a missing resource fails desktop-studio's build script,
+      # and that gates the crate. `--release` because the resource path names
+      # the release profile, matching release_experimental.yml / release_stable.yml.
+      - name: Build goldsrc-hooks (32-bit DoD/GoldSrc companion DLL)
+        run: cargo build -p goldsrc-hooks --release --target i686-pc-windows-msvc
 
       # --all-targets so examples and test code are linted too: native/examples/
       # is where the R&D probes live, and letting them rot silently is how the
