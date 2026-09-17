@@ -356,6 +356,13 @@ python goldsrc-hooks/tools/verify_deathmsg_offsets.py [path-to-client.dll]
 
 ## 5. Live findings, 2026-09-16
 
+The y detour is live-proven too, against an HLTV demo: `offset 20` puts the feed
+at the very top, matching a POV demo exactly; `offset default` returns it to the
+game's ~115; `offset 400` places it far down the screen, a value the old imm8
+could not have held. The signature matched at `+0x2aeeb` in the running
+`client.dll`, exactly where the offline verifier said it would, and the session
+continued for minutes afterwards with no fault recorded.
+
 Tested in a real session against an HLTV demo, and confirmed on screen: eight
 and then ten death-notice lines rendering at once, against the four the game
 ships with, with the feed's y visibly moved by `offset`. The relocated array
