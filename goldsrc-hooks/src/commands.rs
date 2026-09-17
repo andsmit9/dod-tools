@@ -45,15 +45,16 @@ use std::ffi::{CStr, CString, c_char};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicU32, Ordering};
 
 use crate::engine::{self, CvarSPartial};
+use crate::names::console_name;
 use crate::{anim_fix, sound_fix};
 
-const GUNSHOTS_FIX_NAME: &str = "dodtools_hltv_gunshots_fix";
-const ANIMATION_FIX_NAME: &str = "dodtools_hltv_animation_fix";
-const ATTENUATION_NAME: &str = "dodtools_hltv_gunshot_attenuation";
+const GUNSHOTS_FIX_NAME: &str = console_name!("hltv_gunshots_fix");
+const ANIMATION_FIX_NAME: &str = console_name!("hltv_animation_fix");
+const ATTENUATION_NAME: &str = console_name!("hltv_gunshot_attenuation");
 // Not "..._weapon_switch": it fires on stance changes too (p_mg42pr,
 // p_mg42sr), and those are the reason it exists.
-const HELD_MODELS_NAME: &str = "dodtools_log_weapon_model";
-const STATUS_NAME: &str = "dodtools_status";
+const HELD_MODELS_NAME: &str = console_name!("log_weapon_model");
+const STATUS_NAME: &str = console_name!("status");
 
 /// `FCVAR_ARCHIVE` is 1. Deliberately not set — see the module docs.
 const CVAR_FLAGS: i32 = 0;
@@ -68,7 +69,7 @@ static CVAR_HELD_MODELS: AtomicPtr<CvarSPartial> = AtomicPtr::new(std::ptr::null
 /// command fallback path rather than reading null pointers every frame.
 static CVARS_LIVE: AtomicBool = AtomicBool::new(false);
 
-fn console_print(text: &str) {
+pub(crate) fn console_print(text: &str) {
     let Some(engfuncs) = engine::engfuncs() else { return };
     let Ok(c_text) = CString::new(text) else { return };
     unsafe { (engfuncs.pfn_console_print)(c_text.as_ptr()) };
@@ -194,6 +195,9 @@ pub fn poll() {
     poll_level(ANIMATION_FIX_NAME, &CVAR_ANIMATION, &anim_fix::LEVEL);
     poll_flag(HELD_MODELS_NAME, &CVAR_HELD_MODELS, &anim_fix::LOG_HELD_MODELS);
     poll_attenuation();
+    // Re-prepends our DeathMsg handler when the engine has rebuilt the user
+    // message list (it frees the whole list on disconnect). A no-op otherwise.
+    crate::deathmsg::poll();
 }
 
 /// Everything a session might want to know in one reply.
@@ -375,6 +379,18 @@ unsafe extern "C" fn cmd_gunshot_attenuation() {
     ));
 }
 
+/// Registers one command under several names at once.
+///
+/// The engine keeps each name independently, so every entry becomes a working
+/// spelling of the same command -- which is how a rename keeps the old name
+/// alive for a release, and how a variant spelling is added without touching
+/// the handler. See `names.rs`.
+pub(crate) fn add_commands(names: &[&str], function: engine::ConsoleCommandFn) {
+    for name in names {
+        add_command(name, function);
+    }
+}
+
 fn add_command(name: &str, function: engine::ConsoleCommandFn) {
     let Some(engfuncs) = engine::engfuncs() else { return };
     let Ok(c_name) = CString::new(name) else { return };
@@ -412,6 +428,10 @@ pub fn install() {
     // `dodtools_status` is a command under either path: it takes no value, so
     // there is nothing for a cvar to hold.
     add_command(STATUS_NAME, cmd_status);
+
+    // Always a command, never a cvar: it has subcommands and a variable number
+    // of arguments, which a cvar's single value cannot carry.
+    add_commands(crate::deathmsg::COMMAND_NAMES, crate::deathmsg::command);
 
     let bit = |flag: bool| if flag { "1" } else { "0" };
     let gunshots = register(GUNSHOTS_FIX_NAME, bit(sound_fix::ENABLED.load(Ordering::Relaxed)));

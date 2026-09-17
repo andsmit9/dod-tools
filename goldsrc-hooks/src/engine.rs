@@ -87,6 +87,33 @@ pub type GetViewModelFn = unsafe extern "C" fn() -> *mut ClEntityS;
 pub type GetEntityByIndexFn = unsafe extern "C" fn(index: i32) -> *mut ClEntityS;
 pub type ConsoleCommandFn = unsafe extern "C" fn();
 pub type AddCommandFn = unsafe extern "C" fn(cmd_name: *const c_char, function: ConsoleCommandFn);
+/// `int (*pfnHookUserMsg)(char *szMsgName, pfnUserMsgHook pfn)`.
+///
+/// Installs a handler for a named user message. Worth knowing before relying on
+/// it: the engine does **not** overwrite an existing entry. It allocates a
+/// fresh 32-byte record, `memcpy`s the matching one over it (so the message
+/// number and size carry across), sets the new `pfn`, and *prepends* it to
+/// `gClientUserMsgs`. The by-number dispatcher walks that list from the head
+/// and stops at the first record whose number matches -- so the most recent
+/// hook wins, and `client.dll`'s own handler is still reachable by calling it
+/// directly. Verified in `hw.dll` at 0x1d1a830 (hook) and 0x1d1a660
+/// (dispatch), pre-Anniversary. See `deathmsg.rs`.
+/// `gEngfuncs.GetLocalPlayer` (slot 51). Returns the local player's
+/// `cl_entity_t`. Confirmed by the call site at `client.dll+0x20520`, a
+/// three-instruction thunk that calls this slot and immediately
+/// dereferences the result -- so the engine is expected to return something
+/// readable, and `client.dll` does not check.
+pub type GetLocalPlayerFn = unsafe extern "C" fn() -> *mut c_void;
+
+/// `gEngfuncs.pfnGetCvarFloat` (slot 15). Reads a console variable's numeric
+/// value by name, returning 0 for one that does not exist.
+pub type GetCvarFloatFn = unsafe extern "C" fn(name: *const c_char) -> f32;
+
+pub type HookUserMsgFn =
+    unsafe extern "C" fn(msg_name: *const c_char, pfn: UserMsgHookFn) -> i32;
+/// `int (*pfnUserMsgHook)(const char *pszName, int iSize, void *pbuf)`.
+pub type UserMsgHookFn =
+    unsafe extern "C" fn(name: *const c_char, size: i32, buf: *mut c_void) -> i32;
 pub type ConsolePrintFn = unsafe extern "C" fn(text: *const c_char);
 pub type CmdArgcFn = unsafe extern "C" fn() -> i32;
 pub type CmdArgvFn = unsafe extern "C" fn(arg: i32) -> *const c_char;
@@ -380,14 +407,17 @@ pub struct EngineStudioApiPartial {
 pub struct ClEngineFuncsPartial {
     _slots_before_register_variable: [*mut c_void; 14], // pfnSPR_Load .. pfnSetCrosshair
     pub pfn_register_variable: RegisterVariableFn,
-    _slots_before_add_command: [*mut c_void; 2], // pfnGetCvarFloat, pfnGetCvarString
+    pub pfn_get_cvar_float: GetCvarFloatFn,
+    _slots_before_add_command: [*mut c_void; 1], // pfnGetCvarString
     pub pfn_add_command: AddCommandFn,
-    _slots_before_console_print: [*mut c_void; 12], // pfnHookUserMsg .. pfnDrawConsoleStringLen
+    pub pfn_hook_user_msg: HookUserMsgFn,
+    _slots_before_console_print: [*mut c_void; 11], // pfnServerCmd .. pfnDrawConsoleStringLen
     pub pfn_console_print: ConsolePrintFn,
     _slots_before_cmd_argc: [*mut c_void; 7], // pfnCenterPrint .. Cvar_SetValue
     pub cmd_argc: CmdArgcFn,
     pub cmd_argv: CmdArgvFn,
-    _slots_before_viewmodel: [*mut c_void; 12], // Con_Printf .. GetLocalPlayer
+    _slots_before_get_local_player: [*mut c_void; 11], // Con_Printf .. IsNoClipping
+    pub get_local_player: GetLocalPlayerFn,
     pub get_view_model: GetViewModelFn,
     pub get_entity_by_index: GetEntityByIndexFn,
     _slots_before_weapon_anim: [*mut c_void; 12], // GetClientTime .. pfnPlaybackEvent
@@ -417,6 +447,19 @@ const _: () = assert!(
 
 static ENGFUNCS: AtomicPtr<ClEngineFuncsPartial> = AtomicPtr::new(std::ptr::null_mut());
 static ENGINE_STUDIO: AtomicPtr<EngineStudioApiPartial> = AtomicPtr::new(std::ptr::null_mut());
+
+/// `client.dll`'s load address, once the engine has loaded it. `None` before
+/// that.
+///
+/// Every address in `deathmsg.rs` is recorded as an RVA against the analysed
+/// image and rebased through this, rather than assumed: `client.dll` opts out
+/// of ASLR so it usually lands at its preferred 0x1900000, but a base conflict
+/// still relocates it, and all 34 of the death-notice call sites carry base
+/// relocations that the loader would have rewritten.
+pub fn client_module_base() -> Option<usize> {
+    let base = CLIENT_DLL.load(Ordering::Acquire) as usize;
+    (base != 0).then_some(base)
+}
 
 /// Returns the captured engine function table, once `client.dll` has loaded
 /// and been successfully signature-scanned. `None` before that.

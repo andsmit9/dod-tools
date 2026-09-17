@@ -139,3 +139,50 @@ pub unsafe fn find_iat_slot(
         None
     }
 }
+
+/// One section header, as the PE/COFF spec fixes it (40 bytes).
+#[repr(C)]
+struct ImageSectionHeader {
+    _name: [u8; 8],
+    virtual_size: u32,
+    virtual_address: u32,
+    _size_of_raw_data: u32,
+    _pointer_to_raw_data: u32,
+    _pointer_to_relocations: u32,
+    _pointer_to_linenumbers: u32,
+    _number_of_relocations: u16,
+    _number_of_linenumbers: u16,
+    characteristics: u32,
+}
+
+const IMAGE_SCN_MEM_EXECUTE: u32 = 0x2000_0000;
+
+/// `(rva, length)` of the module's first executable section — the range worth
+/// searching for a code signature.
+///
+/// Bounding the scan to executable bytes is not just a speed matter: a pattern
+/// that also appears in `.data` or `.rdata` would make [`crate::scan`]'s
+/// uniqueness check fail over a match that could never have been executed.
+///
+/// Safety: `base` must point at a fully-mapped, valid PE image.
+pub unsafe fn code_range(base: *mut u8) -> Option<(usize, usize)> {
+    unsafe {
+        let nt = nt_headers(base);
+        if (*nt).signature != 0x0000_4550 {
+            return None;
+        }
+        // Section headers follow the optional header, whose size the file
+        // header states rather than the format fixing it.
+        let optional_size = (*nt).file_header.size_of_optional_header as usize;
+        let first = (nt as *const u8)
+            .add(std::mem::size_of::<u32>() + std::mem::size_of::<ImageFileHeader>() + optional_size)
+            as *const ImageSectionHeader;
+        for i in 0..(*nt).file_header.number_of_sections as usize {
+            let section = &*first.add(i);
+            if section.characteristics & IMAGE_SCN_MEM_EXECUTE != 0 && section.virtual_size > 0 {
+                return Some((section.virtual_address as usize, section.virtual_size as usize));
+            }
+        }
+        None
+    }
+}

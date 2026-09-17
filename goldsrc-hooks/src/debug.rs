@@ -23,13 +23,44 @@ fn timestamp() -> String {
     )
 }
 
-/// Appends a line to `%TEMP%\goldsrc_hooks.log`. Failures are swallowed --
+/// Where the log goes: `%APPDATA%\dod-tools\logs\dodstudio_goldsrc_hooks.log`.
+///
+/// The same folder the app's own activity log uses, so there is one place to
+/// look rather than two. `native`'s `activity_log_dir()` resolves it through
+/// `dirs::config_dir()`, which on Windows is `FOLDERID_RoamingAppData` -- the
+/// same directory `%APPDATA%` names, so this matches it without taking a
+/// dependency on `dirs` in a DLL that is deliberately kept to `windows-sys`.
+///
+/// `DOD_TOOLS_LOG_DIR` redirects it, exactly as it redirects the activity log,
+/// so a test run or a packaging check can keep its output out of the user's
+/// own logs.
+///
+/// Falls back to `%TEMP%` if neither resolves. Logging is best-effort and must
+/// never be the reason a capture fails, so there is always somewhere to go.
+fn log_path() -> Option<std::path::PathBuf> {
+    if let Some(redirected) = std::env::var_os("DOD_TOOLS_LOG_DIR") {
+        let dir = std::path::PathBuf::from(redirected);
+        let _ = std::fs::create_dir_all(&dir);
+        return Some(dir.join(LOG_FILE));
+    }
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        let dir = std::path::PathBuf::from(appdata).join("dod-tools").join("logs");
+        if std::fs::create_dir_all(&dir).is_ok() {
+            return Some(dir.join(LOG_FILE));
+        }
+    }
+    std::env::var_os("TEMP").map(|t| std::path::PathBuf::from(t).join(LOG_FILE))
+}
+
+/// Matches the DLL's own filename, so the log is obviously its log.
+const LOG_FILE: &str = "dodstudio_goldsrc_hooks.log";
+
+/// Appends a line to the log (see [`log_path`]). Failures are swallowed --
 /// logging must never be the thing that destabilizes the host process.
 pub unsafe fn report(message: &str) {
-    let Some(mut path) = std::env::var_os("TEMP").map(std::path::PathBuf::from) else {
+    let Some(path) = log_path() else {
         return;
     };
-    path.push("goldsrc_hooks.log");
 
     // Demo time alongside wall clock. Wall clock cannot be matched against
     // something seen on screen once playback is paused, seeked or
@@ -41,7 +72,7 @@ pub unsafe fn report(message: &str) {
     };
 
     if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(file, "[{}]{demo} [goldsrc-hooks] {message}", timestamp());
+        let _ = writeln!(file, "[{}]{demo} [dodstudio_goldsrc_hooks] {message}", timestamp());
     }
 }
 
