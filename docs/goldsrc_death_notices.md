@@ -169,6 +169,59 @@ checking the ones Rust uses. That gap is now closed — see below.
 **The ceiling is 127**, set by the two `cmp r32, imm8` loop bounds. Widening
 those instructions would overwrite the ones after them.
 
+### How HLAE does the same job, and how this differs
+
+Worth recording, because the two approaches differ in kind rather than detail.
+Read out of `AfxHookGoldSrc.dll`.
+
+HLAE does not hardcode addresses. It **signature-scans** the loaded module for
+each thing it needs, from a pattern database keyed by names like
+`cstrike_CHudDeathNotice_Draw_YRes`. The CS pattern for the y site is:
+
+```
+8B 6E 18 8B 54 24 38 0F AF EB       mov ebp,[esi+0x18] / mov edx,[esp+0x38] / imul ebp,ebx
+```
+
+It stores both the matched **address** and its **size** — that is what the
+`_DSZ` half of each pair is, computed as `end - start` right after the scan:
+
+```asm
+0x1001c5c4  sub  eax, ecx
+0x1001c5c6  mov  [YRes], ecx        ; where
+0x1001c5cd  mov  [YRes_DSZ], eax    ; how many bytes
+```
+
+Then it **detours** that whole region to a replacement stub, which reproduces
+the original instructions but substitutes the y from a global when an override
+is active, and jumps back to `address + size`:
+
+```asm
+0x100100a0  mov  ebp, [esi+0x18]        ; the original first instruction
+0x100100a3  mov  dl, [g_bOffsetActive]
+0x100100ab  je   +0x100100b5
+0x100100ad  mov  edx, [g_iOffset]       ; the override
+0x100100b3  jmp  +0x100100b9
+0x100100b5  mov  edx, [esp+0x38]        ; else what the game computed
+0x100100b9  imul ebp, [g_scale]
+0x100100c0  jmp  [YRes + YRes_DSZ]      ; back into Draw
+```
+
+|  | HLAE | here |
+| --- | --- | --- |
+| finding the site | runtime signature scan | fixed RVAs, checked against the shipped bytes |
+| applying it | code detour to a stub | rewrite the immediate in place |
+| the value | a global the stub reads each frame | baked into the instruction |
+| what it sets | the **final y**, overriding whatever branch produced it | one operand, inheriting the surrounding arithmetic |
+| range | whatever a register holds | −128..127, from the `imm8` site |
+| `default` | clear a flag; the stub defers to the game | write the shipped immediate back |
+
+The consequential difference is the fourth row. HLAE replaces the *result*, so
+its offset is an absolute y and behaves the same whichever branch ran. Patching
+an immediate inherits its context — which is why `offset` here means an absolute
+y on one path and an addend on top of ~95 on another, and why the spectator-mode-2
+path cannot be reached at all. Moving to a detour would fix all three, at the
+cost of a stub that has to be register-accurate against a specific build.
+
 ### No `_YRes` equivalent is needed
 
 HLAE carries `cstrike_CHudDeathNotice_Draw_YRes` because CS computes the feed's
