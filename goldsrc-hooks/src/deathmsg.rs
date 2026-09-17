@@ -535,6 +535,11 @@ fn restamp_display_time(base: usize) {
 }
 
 /// Feeds the game a death notice that never happened.
+///
+/// Runs through the same block list as a real one: `block` filters the feed and
+/// `fake` is a source for it, so a fake that escaped the filter would be the
+/// surprise. A blocked `fake` says so rather than reporting success and showing
+/// nothing.
 fn fake(killer: i32, victim: i32, weapon: i32) -> Result<(), String> {
     let Some(original) = original_thunk() else {
         return Err("client.dll is not loaded yet".to_string());
@@ -570,9 +575,24 @@ fn fake(killer: i32, victim: i32, weapon: i32) -> Result<(), String> {
             "{COMMAND} fake: no level is loaded -- GetLocalPlayer() is {local_player:#x}, which client.dll would dereference without checking and take the game down. Load a demo first.\n"
         ));
     }
-    // Straight to client.dll's own handler, deliberately bypassing our hook:
-    // a message you asked for by hand should not then be filtered by the block
-    // list, and the engine is not involved in dispatching it either way.
+    // The block list applies here too. The first version deliberately bypassed
+    // it, reasoning that a message asked for by hand should not then be
+    // filtered -- but `block` is a filter on the feed and `fake` is a source
+    // for it, and a filter that some sources escape is the surprising design,
+    // not the principled one. It also left `block` untestable without waiting
+    // for a real kill, which is how the inconsistency was found.
+    //
+    // Blocked means *reported*, never silently dropped: a command that prints
+    // success and shows nothing is the worst of the three possible behaviours.
+    if BLOCK.lock().map(|list| list.blocks(killer, victim)).unwrap_or(false) {
+        return Err(format!(
+            "{COMMAND} fake: the block list hides frags involving {killer} -> {victim}, so nothing was shown. `{COMMAND} block clear` stops hiding.\n"
+        ));
+    }
+
+    // Straight to client.dll's own handler rather than through our own hook:
+    // the hook's only job is the block check, which has already happened here,
+    // and the engine is not involved in dispatching it either way.
     //
     // Bracketed by log lines because this is the one place the DLL hands
     // control to game code that was never written to be called from here: if

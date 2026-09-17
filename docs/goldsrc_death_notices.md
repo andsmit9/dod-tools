@@ -207,6 +207,14 @@ A mixed `block` list — some plain ids, some `!`-prefixed — is refused rather
 than guessed at, because "hide everyone except 3, and also hide 5" is two
 different questions.
 
+`fake` goes through the block list like any other notice. It did not at first,
+on the reasoning that a message asked for by hand should not then be filtered;
+that was wrong twice over. `block` is a filter on the feed and `fake` is a
+source for it, so the exemption was the surprising behaviour rather than the
+principled one — and it left `block` impossible to test without waiting for a
+real kill, which is how the inconsistency surfaced. A blocked `fake` reports
+that it was blocked; it is never silently dropped.
+
 ### Safety
 
 Before the first write, every one of the 40 sites is checked against the value
