@@ -9,7 +9,7 @@ impl Doer for TeBspDecal {
         let (i, unknown1) = take(8usize)(i)?;
         let (i, entity_index) = le_i16(i)?;
         let (i, unknown2) = if entity_index != 0 {
-            map(take(2usize), |i: &[u8]| Some(i.to_vec()))(i)?
+            map(take(2usize), |i: &[u8]| Some(i.to_vec())).parse(i)?
         } else {
             (i, None)
         };

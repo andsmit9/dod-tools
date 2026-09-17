@@ -10,7 +10,7 @@ impl Doer for SvcHltv {
 
         aux.is_hltv = true;
 
-        map(le_u8, |mode| SvcHltv { mode })(i)
+        map(le_u8, |mode| SvcHltv { mode }).parse(i)
     }
 
     fn write(&self, aux: AuxRefCell) -> ByteVec {

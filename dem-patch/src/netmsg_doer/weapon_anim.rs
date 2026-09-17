@@ -7,12 +7,12 @@ impl Doer for SvcWeaponAnim {
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
         map(
-            tuple((le_i8, le_i8)),
+            (le_i8, le_i8),
             |(sequence_number, weapon_model_body_group)| SvcWeaponAnim {
                 sequence_number,
                 weapon_model_body_group,
             },
-        )(i)
+        ).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

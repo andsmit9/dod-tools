@@ -6,7 +6,7 @@ impl Doer for SvcSetView {
     }
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
-        map(le_i16, |entity_index| SvcSetView { entity_index })(i)
+        map(le_i16, |entity_index| SvcSetView { entity_index }).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

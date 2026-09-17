@@ -8,7 +8,7 @@ impl Doer for SvcCutscene {
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
         map(null_string, |text| Self {
             text: text.to_vec(),
-        })(i)
+        }).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

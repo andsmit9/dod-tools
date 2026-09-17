@@ -1,3 +1,9 @@
+// nom 8 makes every combinator an `impl Parser`, so the trait has to be in
+// scope for `.parse(i)`. `pub(crate)` rather than a plain `use` because the
+// doers pick their shared imports up through `use super::*`, and a glob only
+// re-exports what is `pub`.
+pub(crate) use nom::Parser;
+
 use nom::bytes::complete::take;
 use nom::combinator::{fail, map};
 use nom::error::context;
@@ -6,7 +12,6 @@ use nom::number::complete::le_u8;
 use nom::{
     multi::count,
     number::complete::{le_f32, le_i16, le_i32, le_i8, le_u16, le_u32},
-    sequence::tuple,
 };
 
 use crate::nom_helper::{null_string, Result};
@@ -256,7 +261,7 @@ impl EngineMessage {
             57 => wrap!(SvcSendCvarValue, i, aux),
             58 => wrap!(SvcSendCvarValue2, i, aux),
             59..=63 => (i, EngineMessage::SvcBad),
-            _ => context("Bad engine message number", fail)(i)?,
+            _ => context("Bad engine message number", fail()).parse(i)?,
         };
 
         Ok((i, res))

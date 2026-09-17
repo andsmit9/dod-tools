@@ -6,7 +6,7 @@ impl Doer for SvcVersion {
     }
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
-        map(le_u32, |protocol_version| SvcVersion { protocol_version })(i)
+        map(le_u32, |protocol_version| SvcVersion { protocol_version }).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

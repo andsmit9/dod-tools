@@ -7,14 +7,14 @@ impl Doer for SvcSoundFade {
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
         map(
-            tuple((le_u8, le_u8, le_u8, le_u8)),
+            (le_u8, le_u8, le_u8, le_u8),
             |(initial_percent, hold_time, fade_out_time, fade_in_time)| SvcSoundFade {
                 initial_percent,
                 hold_time,
                 fade_out_time,
                 fade_in_time,
             },
-        )(i)
+        ).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

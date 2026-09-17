@@ -25,7 +25,7 @@
 #![allow(mismatched_lifetime_syntaxes)]
 
 use std::{ffi::OsStr, path::Path};
-use nom::{combinator::all_consuming, multi::many0};
+use nom::{combinator::all_consuming, multi::many0, Parser};
 use types::{AuxRefCell, ByteVec, DeltaDecoderTable, Demo, NetMessage};
 
 use nom_helper::Result;
@@ -55,7 +55,7 @@ pub extern crate bitvec;
 ///
 pub fn parse_netmsg(i: &[u8], aux: AuxRefCell) -> Result<Vec<NetMessage>> {
     let parser = move |i| NetMessage::parse(i, aux.clone());
-    all_consuming(many0(parser))(i)
+    all_consuming(many0(parser)).parse(i)
 }
 
 /// Should be used for replacing `data.msg` of each frame.

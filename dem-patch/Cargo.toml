@@ -55,14 +55,15 @@ path = "src/lib.rs"
 [dependencies]
 bitvec = "1.0.1"
 eyre = "0.6.12"
-# Deliberately NOT `{ workspace = true }`. The workspace is on nom 8, and this
-# crate's ~2,900 lines of parser code are nom 7: nom 8 turns every combinator
-# into an `impl Parser` that needs `.parse(i)` rather than a callable, which is
-# 129 compile errors here. Migrating the bit-level demo reader/writer is real
-# work with real risk and wants its own change, not a ride-along in a cleanup
-# pass. Until then this compiles a second copy of nom, which is the cheaper of
-# the two costs.
-nom = "7.1.3"
+# On nom 8 with the rest of the workspace since #233, so only one copy of nom
+# compiles into a build (nom 7 and its `minimal-lexical` are gone from the
+# lockfile with it). The change nom 8 forces is mechanical -- every combinator
+# is now an `impl Parser` needing `.parse(i)` rather than a callable -- but it
+# is mechanical across ~2,900 lines of bit-level parser, which the four fixture
+# tests do not cover: `demotest.dem` has no `NetworkMessage` frame, so nothing
+# in the suite reaches `netmsg_doer/`. `examples/roundtrip_probe.rs` is what
+# covers it, and #233 records the result.
+nom = { workspace = true }
 
 [lints]
 workspace = true

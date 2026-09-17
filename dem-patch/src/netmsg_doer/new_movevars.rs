@@ -8,15 +8,15 @@ impl Doer for SvcNewMovevars {
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
         // https://github.com/rust-bakery/nom/issues/1144
         map(
-            tuple((
-                tuple((
+            (
+                (
                     le_f32, le_f32, le_f32, le_f32, le_f32, le_f32, le_f32, le_f32, le_f32, le_f32,
                     le_f32, le_f32, le_f32, le_f32, le_f32, le_f32, le_u8, le_f32, le_f32,
-                )),
+                ),
                 count(le_f32, 3),
                 count(le_f32, 3),
                 null_string,
-            )),
+            ),
             |
             (
                 (gravity,
@@ -67,7 +67,7 @@ impl Doer for SvcNewMovevars {
                 sky_vec,
                 sky_name: sky_name.to_vec(),
             },
-        )(i)
+        ).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

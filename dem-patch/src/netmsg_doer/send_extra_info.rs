@@ -6,12 +6,12 @@ impl Doer for SvcSendExtraInfo {
     }
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
-        map(tuple((null_string, le_u8)), |(fallback_dir, can_cheat)| {
+        map((null_string, le_u8), |(fallback_dir, can_cheat)| {
             SvcSendExtraInfo {
                 fallback_dir: fallback_dir.to_vec(),
                 can_cheat,
             }
-        })(i)
+        }).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

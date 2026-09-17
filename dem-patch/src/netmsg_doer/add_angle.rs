@@ -6,7 +6,7 @@ impl Doer for SvcAddAngle {
     }
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
-        map(le_i16, |angle_to_add| Self { angle_to_add })(i)
+        map(le_i16, |angle_to_add| Self { angle_to_add }).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

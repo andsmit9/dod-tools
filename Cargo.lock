@@ -984,7 +984,7 @@ version = "0.2.3"
 dependencies = [
  "bitvec",
  "eyre",
- "nom 7.1.3",
+ "nom",
 ]
 
 [[package]]
@@ -1203,7 +1203,7 @@ dependencies = [
 name = "dod"
 version = "0.10.0"
 dependencies = [
- "nom 8.0.0",
+ "nom",
  "serde",
 ]
 
@@ -2564,12 +2564,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
-name = "minimal-lexical"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
-
-[[package]]
 name = "minisign-verify"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2635,7 +2629,7 @@ dependencies = [
  "js-sys",
  "keepawake",
  "log",
- "nom 8.0.0",
+ "nom",
  "open",
  "rfd 0.14.1",
  "serde",
@@ -2694,16 +2688,6 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "memoffset",
-]
-
-[[package]]
-name = "nom"
-version = "7.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
-dependencies = [
- "memchr",
- "minimal-lexical",
 ]
 
 [[package]]

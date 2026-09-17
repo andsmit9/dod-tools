@@ -7,7 +7,7 @@ impl Doer for SvcServerInfo {
 
     fn parse(i: &[u8], aux: AuxRefCell) -> Result<Self> {
         map(
-            tuple((
+            (
                 le_i32,
                 le_i32,
                 le_i32,
@@ -20,7 +20,7 @@ impl Doer for SvcServerInfo {
                 null_string,
                 null_string,
                 le_u8,
-            )),
+            ),
             |(
                 protocol,
                 spawn_count,
@@ -55,7 +55,7 @@ impl Doer for SvcServerInfo {
                     unknown,
                 }
             },
-        )(i)
+        ).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

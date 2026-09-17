@@ -6,8 +6,8 @@ impl Doer for SvcRestore {
     }
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
-        let (i, (save_name, map_count)) = tuple((null_string, le_u8))(i)?;
-        let (i, map_names) = count(map(null_string, |s| s.to_vec()), map_count as usize)(i)?;
+        let (i, (save_name, map_count)) = (null_string, le_u8).parse(i)?;
+        let (i, map_names) = count(map(null_string, |s| s.to_vec()), map_count as usize).parse(i)?;
 
         Ok((
             i,

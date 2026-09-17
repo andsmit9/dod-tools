@@ -6,7 +6,7 @@ impl Doer for SvcVoiceData {
     }
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
-        let (i, (player_index, size)) = tuple((le_u8, le_u16))(i)?;
+        let (i, (player_index, size)) = (le_u8, le_u16).parse(i)?;
         let (i, data) = take(size)(i)?;
 
         Ok((

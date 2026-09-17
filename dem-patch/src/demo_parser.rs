@@ -5,7 +5,7 @@ use nom::{
     combinator::{map, verify},
     multi::{count, many0, many_till},
     number::complete::{le_f32, le_i16, le_i32, le_i8, le_u16, le_u32, le_u8},
-    sequence::tuple,
+    Parser,
 };
 
 use crate::{
@@ -79,14 +79,14 @@ pub fn parse_header(i: &[u8]) -> Result<Header> {
     }
 
     map(
-        tuple((
+        (
             le_i32,
             le_i32,
             take(260usize),
             take(260usize),
             le_u32,
             le_i32,
-        )),
+        ),
         |(
             demo_protocol,
             network_protocol,
@@ -103,7 +103,7 @@ pub fn parse_header(i: &[u8]) -> Result<Header> {
             map_checksum,
             directory_offset,
         },
-    )(i)
+    ).parse(i)
 }
 
 pub fn parse_directory<'a>(
@@ -120,7 +120,7 @@ pub fn parse_directory<'a>(
     map(
         count(local_parse_directory_entry, entry_count as usize),
         |entries| Directory { entries },
-    )(i)
+    ).parse(i)
 }
 
 /// Parse a fallback directory for demo files that were not finalized by a client.
@@ -150,7 +150,7 @@ pub fn parse_fallback_directory<'a>(
         verify(parser, |frame| {
             matches!(frame.frame_data, FrameData::NextSection)
         }),
-    )(frames_start)?;
+    ).parse(frames_start)?;
 
     loading_frames.push(next_section_frame);
 
@@ -171,7 +171,7 @@ pub fn parse_fallback_directory<'a>(
     };
 
     let playback_entry_start = i;
-    let (i, playback_frames) = many0(parser)(i)?;
+    let (i, playback_frames) = many0(parser).parse(i)?;
     let playback_entry_end = i;
 
     let playback_entry = DirectoryEntry {
@@ -205,7 +205,7 @@ pub fn parse_directory_entry<'a>(
     let (
         end_of_current_directory_entry,
         (type_, description, flags, cd_track, track_time, frame_count, frame_offset, file_length),
-    ) = tuple((
+    ) = (
         le_i32,
         take(64usize),
         le_i32,
@@ -214,7 +214,7 @@ pub fn parse_directory_entry<'a>(
         le_i32,
         le_i32,
         le_i32,
-    ))(i)?;
+    ).parse(i)?;
 
     // frame_count is unreliable
     // parse until NextSection and stop for current entry
@@ -255,17 +255,17 @@ pub fn parse_frame(
     netmsg_parse_mode: MessageDataParseMode,
     aux: AuxRefCell,
 ) -> Result<Frame> {
-    let (i, (type_, time, frame)) = tuple((le_u8, le_f32, le_i32))(i)?;
+    let (i, (type_, time, frame)) = (le_u8, le_f32, le_i32).parse(i)?;
 
     let (i, frame_data) = match type_ {
         2 => (i, FrameData::DemoStart),
-        3 => map(parse_console_command, FrameData::ConsoleCommand)(i)?,
-        4 => map(parse_client_data, FrameData::ClientData)(i)?,
+        3 => map(parse_console_command, FrameData::ConsoleCommand).parse(i)?,
+        4 => map(parse_client_data, FrameData::ClientData).parse(i)?,
         5 => (i, FrameData::NextSection),
-        6 => map(parse_event, FrameData::Event)(i)?,
-        7 => map(parse_weapon_animation, FrameData::WeaponAnimation)(i)?,
-        8 => map(parse_sound, FrameData::Sound)(i)?,
-        9 => map(parse_demo_buffer, FrameData::DemoBuffer)(i)?,
+        6 => map(parse_event, FrameData::Event).parse(i)?,
+        7 => map(parse_weapon_animation, FrameData::WeaponAnimation).parse(i)?,
+        8 => map(parse_sound, FrameData::Sound).parse(i)?,
+        9 => map(parse_demo_buffer, FrameData::DemoBuffer).parse(i)?,
         rest => {
             let (i, res) = parse_network_messages(i, netmsg_parse_mode, aux)?;
             (
@@ -291,36 +291,36 @@ pub fn parse_frame(
 pub fn parse_console_command(i: &[u8]) -> Result<ConsoleCommand> {
     map(take(64usize), |command: &[u8]| ConsoleCommand {
         command: command.into(),
-    })(i)
+    }).parse(i)
 }
 
 pub fn parse_client_data(i: &[u8]) -> Result<ClientData> {
     map(
-        tuple((take_point_float, take_point_float, le_i32, le_f32)),
+        (take_point_float, take_point_float, le_i32, le_f32),
         |(origin, viewangles, weapon_bits, fov)| ClientData {
             origin,
             viewangles,
             weapon_bits,
             fov,
         },
-    )(i)
+    ).parse(i)
 }
 
 pub fn parse_event(i: &[u8]) -> Result<Event> {
     map(
-        tuple((le_i32, le_i32, le_f32, parse_event_args)),
+        (le_i32, le_i32, le_f32, parse_event_args),
         |(flags, index, delay, args)| Event {
             flags,
             index,
             delay,
             args,
         },
-    )(i)
+    ).parse(i)
 }
 
 pub fn parse_event_args(i: &[u8]) -> Result<EventArgs> {
     map(
-        tuple((
+        (
             le_i32,
             le_i32,
             take_point_float,
@@ -333,7 +333,7 @@ pub fn parse_event_args(i: &[u8]) -> Result<EventArgs> {
             le_i32,
             le_i32,
             le_i32,
-        )),
+        ),
         |(
             flags,
             entity_index,
@@ -361,24 +361,24 @@ pub fn parse_event_args(i: &[u8]) -> Result<EventArgs> {
             bparam1,
             bparam2,
         },
-    )(i)
+    ).parse(i)
 }
 
 pub fn parse_weapon_animation(i: &[u8]) -> Result<WeaponAnimation> {
-    map(tuple((le_i32, le_i32)), |(anim, body)| WeaponAnimation {
+    map((le_i32, le_i32), |(anim, body)| WeaponAnimation {
         anim,
         body,
-    })(i)
+    }).parse(i)
 }
 
 pub fn parse_sound(i: &[u8]) -> Result<Sound> {
-    let (i, (channel, sample_length)) = tuple((le_i32, le_u32))(i)?;
+    let (i, (channel, sample_length)) = (le_i32, le_u32).parse(i)?;
 
     // cannot return res directly because it is a closure and `channel` is outside of it
 
     #[allow(clippy::let_and_return)]
     let res = map(
-        tuple((take(sample_length), le_f32, le_f32, le_i32, le_i32)),
+        (take(sample_length), le_f32, le_f32, le_i32, le_i32),
         |(sample, attenuation, volume, flags, pitch): (&[u8], _, _, _, _)| Sound {
             channel,
             sample: sample.to_vec(),
@@ -387,7 +387,7 @@ pub fn parse_sound(i: &[u8]) -> Result<Sound> {
             flags,
             pitch,
         },
-    )(i);
+    ).parse(i);
 
     res
 }
@@ -397,7 +397,7 @@ pub fn parse_demo_buffer(i: &[u8]) -> Result<DemoBuffer> {
 
     map(take(buffer_length), |buffer: &[u8]| DemoBuffer {
         buffer: buffer.to_vec(),
-    })(i)
+    }).parse(i)
 }
 
 pub fn parse_network_messages(
@@ -406,7 +406,7 @@ pub fn parse_network_messages(
     aux: AuxRefCell,
 ) -> Result<NetworkMessage> {
     let (i, (info, sequence_info, message_length)) =
-        tuple((parse_network_messages_info, parse_sequence_info, le_u32))(i)?;
+        (parse_network_messages_info, parse_sequence_info, le_u32).parse(i)?;
 
     if message_length > 65536 {
         return nom_fail(format!("message length too long: {}", message_length));
@@ -442,14 +442,14 @@ pub fn parse_network_messages(
 
 pub fn parse_network_messages_info(i: &[u8]) -> Result<DemoInfo> {
     map(
-        tuple((
+        (
             le_f32,
             parse_refparams,
             parse_usercmd,
             parse_movevars,
             take_point_float,
             le_i32,
-        )),
+        ),
         |(timestamp, refparams, usercmd, movevars, view, viewmodel)| DemoInfo {
             timestamp,
             refparams,
@@ -458,25 +458,25 @@ pub fn parse_network_messages_info(i: &[u8]) -> Result<DemoInfo> {
             view,
             viewmodel,
         },
-    )(i)
+    ).parse(i)
 }
 
 pub fn parse_refparams(i: &[u8]) -> Result<RefParams> {
     map(
-        tuple((
-            tuple((
+        (
+            (
                 take_point_float,
                 take_point_float,
                 take_point_float,
                 take_point_float,
                 take_point_float,
-            )),
+            ),
             le_f32,
             le_f32,
-            tuple((le_i32, le_i32, le_i32, le_i32)),
+            (le_i32, le_i32, le_i32, le_i32),
             le_i32,
-            tuple((take_point_float, take_point_float)),
-            tuple((
+            (take_point_float, take_point_float),
+            (
                 take_point_float,
                 le_f32,
                 take_point_float,
@@ -484,8 +484,8 @@ pub fn parse_refparams(i: &[u8]) -> Result<RefParams> {
                 take_point_float,
                 le_f32,
                 take_point_float,
-            )),
-            tuple((
+            ),
+            (
                 le_i32,
                 le_i32,
                 le_i32,
@@ -498,8 +498,8 @@ pub fn parse_refparams(i: &[u8]) -> Result<RefParams> {
                 count(le_i32, 4),
                 le_i32,
                 le_i32,
-            )),
-        )),
+            ),
+        ),
         |(
             (view_origin, view_angles, forward, right, up),
             frame_time,
@@ -565,12 +565,12 @@ pub fn parse_refparams(i: &[u8]) -> Result<RefParams> {
             next_view,
             only_client_draw,
         },
-    )(i)
+    ).parse(i)
 }
 
 pub fn parse_usercmd(i: &[u8]) -> Result<UserCmd> {
     map(
-        tuple((
+        (
             le_i16,
             le_u8,
             le_u8,
@@ -587,7 +587,7 @@ pub fn parse_usercmd(i: &[u8]) -> Result<UserCmd> {
             le_u8,
             le_i32,
             take_point_float,
-        )),
+        ),
         |(
             lerp_msec,
             msec,
@@ -623,24 +623,24 @@ pub fn parse_usercmd(i: &[u8]) -> Result<UserCmd> {
             impact_index,
             impact_position,
         },
-    )(i)
+    ).parse(i)
 }
 
 pub fn parse_movevars(i: &[u8]) -> Result<MoveVars> {
     map(
-        tuple((
+        (
             le_f32,
-            tuple((le_f32, le_f32, le_f32)),
-            tuple((
+            (le_f32, le_f32, le_f32),
+            (
                 le_f32, le_f32, le_f32, le_f32, le_f32, le_f32, le_f32, le_f32, le_f32, le_f32,
-            )),
+            ),
             le_f32,
             le_f32,
             le_i32,
             take(32usize),
-            tuple((le_f32, le_f32)),
-            tuple((take_point_float, take_point_float)),
-        )),
+            (le_f32, le_f32),
+            (take_point_float, take_point_float),
+        ),
         |(
             gravity,
             (stopspeed, maxspeed, spectatormaxspeed),
@@ -686,12 +686,12 @@ pub fn parse_movevars(i: &[u8]) -> Result<MoveVars> {
             skycolor,
             skyvec,
         },
-    )(i)
+    ).parse(i)
 }
 
 pub fn parse_sequence_info(i: &[u8]) -> Result<SequenceInfo> {
     map(
-        tuple((le_i32, le_i32, le_i32, le_i32, le_i32, le_i32, le_i32)),
+        (le_i32, le_i32, le_i32, le_i32, le_i32, le_i32, le_i32),
         |(
             incoming_sequence,
             incoming_acknowledged,
@@ -709,5 +709,5 @@ pub fn parse_sequence_info(i: &[u8]) -> Result<SequenceInfo> {
             reliable_sequence,
             last_reliable_sequence,
         },
-    )(i)
+    ).parse(i)
 }

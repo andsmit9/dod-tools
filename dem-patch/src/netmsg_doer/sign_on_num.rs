@@ -6,7 +6,7 @@ impl Doer for SvcSignOnNum {
     }
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
-        map(le_i8, |sign| SvcSignOnNum { sign })(i)
+        map(le_i8, |sign| SvcSignOnNum { sign }).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

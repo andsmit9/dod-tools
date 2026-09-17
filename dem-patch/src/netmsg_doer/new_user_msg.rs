@@ -7,7 +7,7 @@ impl Doer for SvcNewUserMsg {
 
     fn parse(i: &[u8], aux: AuxRefCell) -> Result<Self> {
         map(
-            tuple((le_u8, le_i8, take(16usize))),
+            (le_u8, le_i8, take(16usize)),
             |(index, size, name): (_, _, &[u8])| {
                 let msg = Self {
                     index,
@@ -23,7 +23,7 @@ impl Doer for SvcNewUserMsg {
 
                 msg
             },
-        )(i)
+        ).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

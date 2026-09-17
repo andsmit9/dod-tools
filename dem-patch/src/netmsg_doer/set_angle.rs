@@ -6,9 +6,9 @@ impl Doer for SvcSetAngle {
     }
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
-        map(tuple((le_i16, le_i16, le_i16)), |(pitch, yaw, roll)| {
+        map((le_i16, le_i16, le_i16), |(pitch, yaw, roll)| {
             SvcSetAngle { pitch, yaw, roll }
-        })(i)
+        }).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

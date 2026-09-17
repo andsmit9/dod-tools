@@ -6,7 +6,7 @@ impl Doer for SvcRoomType {
     }
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
-        map(le_u16, |room_type| SvcRoomType { room_type })(i)
+        map(le_u16, |room_type| SvcRoomType { room_type }).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

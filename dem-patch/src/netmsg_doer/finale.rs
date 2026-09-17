@@ -8,7 +8,7 @@ impl Doer for SvcFinale {
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
         map(null_string, |text| SvcFinale {
             text: text.to_vec(),
-        })(i)
+        }).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

@@ -6,7 +6,7 @@ impl Doer for SvcTime {
     }
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
-        map(le_f32, |time| SvcTime { time })(i)
+        map(le_f32, |time| SvcTime { time }).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

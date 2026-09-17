@@ -7,14 +7,14 @@ impl Doer for SvcParticle {
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
         map(
-            tuple((count(le_i16, 3), take(3usize), le_u8, le_u8)),
+            (count(le_i16, 3), take(3usize), le_u8, le_u8),
             |(origin, direction, count, color): (Vec<i16>, &[u8], _, _)| SvcParticle {
                 origin,
                 direction: direction.to_vec(),
                 count,
                 color,
             },
-        )(i)
+        ).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {

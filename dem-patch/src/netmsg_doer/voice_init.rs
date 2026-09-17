@@ -6,12 +6,12 @@ impl Doer for SvcVoiceInit {
     }
 
     fn parse(i: &[u8], _: AuxRefCell) -> Result<Self> {
-        map(tuple((null_string, le_i8)), |(codec_name, quality)| {
+        map((null_string, le_i8), |(codec_name, quality)| {
             SvcVoiceInit {
                 codec_name: codec_name.to_vec(),
                 quality,
             }
-        })(i)
+        }).parse(i)
     }
 
     fn write(&self, _: AuxRefCell) -> ByteVec {
