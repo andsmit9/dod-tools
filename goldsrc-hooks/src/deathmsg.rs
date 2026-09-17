@@ -316,6 +316,43 @@ fn buffer() -> usize {
 ///
 /// `max == STOCK_MAX` restores the shipped bytes exactly, array included, so
 /// there is always a clean way back.
+/// The `client.dll` base [`verify_stock`] has approved, or 0.
+static VERIFIED_BASE: AtomicUsize = AtomicUsize::new(0);
+
+/// Whether [`verify_stock`] still has to run for the module at `base`.
+///
+/// Verification asks whether every site still holds the value the analysed
+/// build shipped, so it is only meaningful *before* anything is written. Once a
+/// subcommand has patched, our own writes are precisely what it would flag.
+/// That is not hypothetical: gating it on "have we changed the line count"
+/// meant `offset 100` left `0x64` at a site the next `max` then refused over,
+/// because reverting `max` to the stock 4 had reset the flag that suppressed
+/// the check. The state "never touched" and the state "put back the way it was"
+/// are not the same thing, and one counter cannot hold both.
+///
+/// Keyed on the base rather than a flag so a reloaded `client.dll` — stock code
+/// again, possibly at a different address — is re-verified rather than
+/// inheriting the previous module's verdict.
+fn needs_verification(verified: usize, base: usize) -> bool {
+    verified != base
+}
+
+/// Verifies the module at `base` once, and remembers it.
+fn ensure_verified(base: usize) -> Result<(), String> {
+    if !needs_verification(VERIFIED_BASE.load(Ordering::Acquire), base) {
+        return Ok(());
+    }
+    unsafe { verify_stock(base) }.map_err(|why| {
+        format!("this client.dll is not the build these offsets were derived from -- {why}")
+    })?;
+    // A module that verifies as stock carries none of our patches, whatever a
+    // previous module made these say.
+    PATCHED_MAX.store(0, Ordering::Release);
+    PATCHED_OFFSET.store(0, Ordering::Release);
+    VERIFIED_BASE.store(base, Ordering::Release);
+    Ok(())
+}
+
 fn apply_max(max: i32) -> Result<(), String> {
     let Some(base) = engine::client_module_base() else {
         return Err("client.dll is not loaded yet".to_string());
@@ -324,13 +361,7 @@ fn apply_max(max: i32) -> Result<(), String> {
         return Err(format!("expected {STOCK_MAX}..={MAX_LINES}, got {max}"));
     }
 
-    // Only meaningful against an untouched module; after that we know the state
-    // because we are the only thing that has written to it.
-    if PATCHED_MAX.load(Ordering::Acquire) == 0 {
-        unsafe { verify_stock(base) }.map_err(|why| {
-            format!("this client.dll is not the build these offsets were derived from -- {why}")
-        })?;
-    }
+    ensure_verified(base)?;
 
     let reverting = max == STOCK_MAX;
     let array = if reverting { base + ARRAY_RVA } else { buffer() };
@@ -371,11 +402,7 @@ fn apply_offset(y: i32) -> Result<(), String> {
             "expected 0..={MAX_OFFSET}, got {y} (the spectator branch's `add eax, imm8` sets the ceiling)"
         ));
     }
-    if PATCHED_MAX.load(Ordering::Acquire) == 0 && PATCHED_OFFSET.load(Ordering::Acquire) == 0 {
-        unsafe { verify_stock(base) }.map_err(|why| {
-            format!("this client.dll is not the build these offsets were derived from -- {why}")
-        })?;
-    }
+    ensure_verified(base)?;
     for &(rva, width) in OFFSET_SITES {
         let ok = if width == 4 {
             unsafe { write_code(base, rva, &(y as u32).to_le_bytes()) }
@@ -685,6 +712,19 @@ pub unsafe extern "C" fn command() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_module_is_verified_once_and_a_reloaded_one_again() {
+        // Never seen: must verify.
+        assert!(needs_verification(0, 0x1000_0000));
+        // Already approved: must not re-run, or our own patched bytes read as
+        // a mismatch -- which is the bug that sent `max` into "this client.dll
+        // is not the build these offsets were derived from" after `offset`
+        // had legitimately written a non-stock value.
+        assert!(!needs_verification(0x1000_0000, 0x1000_0000));
+        // client.dll reloaded elsewhere: stock code again, verify again.
+        assert!(needs_verification(0x1000_0000, 0x2000_0000));
+    }
 
     #[test]
     fn count_constants_match_the_shipped_values() {

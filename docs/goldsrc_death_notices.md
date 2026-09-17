@@ -281,6 +281,24 @@ the same way. It simply never happens, because kills only arrive during play.
 `fake` now reads that pointer itself and refuses with a message naming the
 cause, rather than letting the game vanish.
 
+### Verification runs once per module, not once per command
+
+The pre-flight check asks whether every site still holds the value the analysed
+build shipped, so it is only meaningful *before* anything has been written. The
+first version gated it on "have we changed the line count", which conflated two
+different states: *never touched* and *put back the way it was*. Setting `max`
+back to the stock 4 cleared the flag, so a later `max` re-ran the check against
+a module where `offset 100` had legitimately written `0x64` — and refused:
+
+```
+max: this client.dll is not the build these offsets were derived from
+     -- y offset at +0x2aef4 reads 0x64, expected 0x14
+```
+
+It is now keyed on the module base: verified once, and again only if
+`client.dll` is reloaded at a different address, in which case the recorded
+patch state is reset too rather than inherited.
+
 ### A note on reading the log
 
 The `[demo N]` column in the DLL's log is client time since process start, not
