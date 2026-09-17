@@ -200,12 +200,21 @@ checked before either happens:
 
 - **Reading HLAE's source** — e.g. lifting its pattern database or its hooking
   framework rather than re-deriving equivalents. Then `advancedfx`'s licence
-  governs, and it has to be read first. This install's `readme.txt` points at
-  `./LICENSES/advancedfx/LICENSE`, which the shipped folder does not contain, so
-  the authoritative copy is the one in `github.com/advancedfx/advancedfx`.
+  governs. That licence is **not simply MIT**, despite what the main repository
+  says at a glance: `github.com/advancedfx/advancedfx` states that it holds the
+  parts of the project that are under MIT, that a *sub-module* holds proprietary
+  code not moved under MIT, and that the licence **does not apply to
+  sub-modules**. A separate `advancedfx/advancedfx-prop` repository exists.
+
+  So the question is not "is HLAE MIT" but **which side of that split
+  `AfxHookGoldSrc` falls on**, and that is unresolved here. Establish it before
+  reading any HLAE source. Note the shipped install is no help: its
+  `readme.txt` points at `./LICENSES/advancedfx/LICENSE`, a file the folder does
+  not contain, and `./LICENSES/advancedfx/` holds only a third-party manifest.
 - **Contributing upstream.** A patch sent to HLAE is licensed on *their* terms,
-  not this repository's. That is a deliberate choice to make when the time
-  comes, not a consequence of having written the code here first.
+  not this repository's — and per the split above, *which* terms depends on
+  which part of the project it lands in. A deliberate choice to make when the
+  time comes, not a consequence of having written the code here first.
 
 ### How HLAE does the same job, and how this differs
 
