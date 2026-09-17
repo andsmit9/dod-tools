@@ -164,6 +164,15 @@ const OFFSET_SITES: &[(usize, usize)] = &[
 /// widening that instruction would overwrite the one after it.
 const MAX_OFFSET: i32 = 127;
 
+/// And the floor. `83 c0 xx` **sign-extends** its `imm8`, so the same byte that
+/// caps the offset at 127 reaches down to -128 — negative offsets are not a
+/// trick, they are what the encoding already holds. They are the useful
+/// direction, too: in the spectator layout `Draw` computes
+/// `y = round(ScreenHeight / 480 * 42) + offset`, about 95 + 20 at 1080p, which
+/// is why a kill feed sits lower in a spectated demo than in a POV one. Pulling
+/// it back up to the POV position means a negative offset.
+const MIN_OFFSET: i32 = -128;
+
 /// DoD's weapon-sprite table, indexed by the third byte of a `DeathMsg`.
 /// Index 0 and anything >= 44 fall back to `d_world`, matching the bounds check
 /// in `MsgFunc_DeathMsg` (`test eax,eax; jle` / `cmp eax,0x2c; jge`).
@@ -190,7 +199,13 @@ static PATCHED_MAX: AtomicI32 = AtomicI32::new(0);
 /// be rewritten for a new count without the base changing under a live demo.
 static BUFFER: AtomicUsize = AtomicUsize::new(0);
 /// The y currently patched in, or 0 while untouched.
-static PATCHED_OFFSET: AtomicI32 = AtomicI32::new(0);
+/// The offset in force, or [`OFFSET_UNSET`]. Not 0-for-unset: 0 is a value a
+/// user can legitimately ask for, and reporting it as the default would be a
+/// lie.
+static PATCHED_OFFSET: AtomicI32 = AtomicI32::new(OFFSET_UNSET);
+
+/// Sentinel outside the range `apply_offset` accepts.
+const OFFSET_UNSET: i32 = i32::MIN;
 /// Whether our `DeathMsg` handler is installed and should be kept installed.
 static HOOK_WANTED: AtomicBool = AtomicBool::new(false);
 
@@ -348,7 +363,7 @@ fn ensure_verified(base: usize) -> Result<(), String> {
     // A module that verifies as stock carries none of our patches, whatever a
     // previous module made these say.
     PATCHED_MAX.store(0, Ordering::Release);
-    PATCHED_OFFSET.store(0, Ordering::Release);
+    PATCHED_OFFSET.store(OFFSET_UNSET, Ordering::Release);
     VERIFIED_BASE.store(base, Ordering::Release);
     Ok(())
 }
@@ -397,15 +412,15 @@ fn apply_offset(y: i32) -> Result<(), String> {
     let Some(base) = engine::client_module_base() else {
         return Err("client.dll is not loaded yet".to_string());
     };
-    if !(0..=MAX_OFFSET).contains(&y) {
+    if !(MIN_OFFSET..=MAX_OFFSET).contains(&y) {
         return Err(format!(
-            "expected 0..={MAX_OFFSET}, got {y} (the spectator branch's `add eax, imm8` sets the ceiling)"
+            "expected {MIN_OFFSET}..={MAX_OFFSET}, got {y} (the spectator branch's sign-extended `add eax, imm8` sets both ends)"
         ));
     }
     ensure_verified(base)?;
     for &(rva, width) in OFFSET_SITES {
         let ok = if width == 4 {
-            unsafe { write_code(base, rva, &(y as u32).to_le_bytes()) }
+            unsafe { write_code(base, rva, &(y as u32).to_le_bytes()) } // two's complement for y < 0
         } else {
             unsafe { write_code(base, rva, &[y as u8]) }
         };
@@ -413,7 +428,7 @@ fn apply_offset(y: i32) -> Result<(), String> {
             return Err(format!("could not make +{rva:#x} writable"));
         }
     }
-    PATCHED_OFFSET.store(if y == STOCK_OFFSET { 0 } else { y }, Ordering::Release);
+    PATCHED_OFFSET.store(y, Ordering::Release);
     Ok(())
 }
 
@@ -635,7 +650,7 @@ fn status() -> String {
     format!(
         "{COMMAND}: max = {} line(s), offset = y {}, blocking {block}\n",
         if max == 0 { STOCK_MAX } else { max },
-        if offset == 0 { STOCK_OFFSET } else { offset },
+        if offset == OFFSET_UNSET { STOCK_OFFSET } else { offset },
     )
 }
 
@@ -786,6 +801,24 @@ pub unsafe extern "C" fn command() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_offset_range_is_exactly_what_a_sign_extended_imm8_holds() {
+        // `83 c0 xx` sign-extends, so both ends come from the same byte. Get
+        // this wrong in the generous direction and the write silently wraps.
+        assert_eq!(MIN_OFFSET, i8::MIN as i32);
+        assert_eq!(MAX_OFFSET, i8::MAX as i32);
+        for y in [MIN_OFFSET, -75, 0, STOCK_OFFSET, MAX_OFFSET] {
+            assert_eq!(
+                i32::from(y as u8 as i8),
+                y,
+                "{y} does not survive the round trip through the imm8 the patch writes"
+            );
+        }
+        // 0 is a legitimate offset, so it must not be the "never set" sentinel.
+        assert_ne!(OFFSET_UNSET, 0);
+        assert!(!(MIN_OFFSET..=MAX_OFFSET).contains(&OFFSET_UNSET));
+    }
 
     #[test]
     fn the_restamped_fields_are_ones_the_game_itself_indexes() {

@@ -75,6 +75,14 @@ def rust_scalar(src: str, name: str) -> int:
     return int(text, 16) if text.startswith("0x") else int(text)
 
 
+def rust_signed(src: str, name: str) -> int:
+    """Like `rust_scalar`, but for a constant written with a leading minus."""
+    match = re.search(rf"const {name}: \w+ = (-?\d+);", src)
+    if not match:
+        raise SystemExit(f"could not find `const {name}` in deathmsg.rs")
+    return int(match.group(1))
+
+
 def rust_block(src: str, name: str) -> str:
     block = src.split(f"const {name}")[1]
     return block[block.index("[") : block.index("];")]
@@ -152,6 +160,7 @@ def main() -> int:
     max_lines = rust_scalar(src, "MAX_LINES")
     stock_offset = rust_scalar(src, "STOCK_OFFSET")
     max_offset = rust_scalar(src, "MAX_OFFSET")
+    min_offset = rust_signed(src, "MIN_OFFSET")
     sentinel_rva = rust_scalar(src, "SENTINEL_RVA")
     rust_refs = rust_array_refs(src)
     count_sites = rust_count_sites(src)
@@ -232,11 +241,14 @@ def main() -> int:
             ok = False
         print(f"  {verdict:4} +{rva:#x} {kind} at max={max_lines} is {value} (imm{width * 8} holds <= {limit})")
     for rva, width in offset_sites:
-        limit = 0x7F if width == 1 else 0xFFFFFFFF
-        verdict = "ok" if max_offset <= limit else "FAIL"
+        # The imm8 site is `83 c0 xx`, which sign-extends -- so its range is
+        # signed, and a check against 0..0xff would wave through a value that
+        # silently means something else.
+        lo, hi = (-0x80, 0x7F) if width == 1 else (-(2**31), 2**31 - 1)
+        verdict = "ok" if lo <= min_offset and max_offset <= hi else "FAIL"
         if verdict == "FAIL":
             ok = False
-        print(f"  {verdict:4} +{rva:#x} y offset at {max_offset} (imm{width * 8} holds <= {limit})")
+        print(f"  {verdict:4} +{rva:#x} y offset {min_offset}..{max_offset} (signed imm{width * 8} holds {lo}..{hi})")
 
     # -- Pass 4: apply the patch and check the result still decodes ------------
     print("\npatched images:")

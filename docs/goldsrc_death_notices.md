@@ -183,9 +183,41 @@ y differently. DoD's `Draw` starts at y = 20 and accumulates line height
 +0x2af19  add eax, 0x14                    ; else ScreenHeight/480*42 + 20
 ```
 
-`offset` patches both immediates. The second is an `add eax, imm8`, which is
-what caps the offset at 127 — about 286 real pixels at 1080p, since y here is
-in screen pixels.
+`offset` patches both immediates. The second is `83 c0 xx`, `add eax, imm8`,
+which **sign-extends** — so the range is −128..127, not 0..127, and negative is
+the useful direction.
+
+That matters because `Draw` picks the feed's y down one of three paths:
+
+```asm
++0x2aeba  call <spectator mode>            ; 0 unless spectating
++0x2aebf  cmp  eax, 2
++0x2aec2  jne  +0x2aeeb
+          ; mode 2: y comes from the spectator layout's own out-params.
+          ; Neither patch site is on this path.
++0x2aeeb  mov  eax, [0x19e88d4]            ; the spectator-HUD flag
++0x2aef0  mov  dword ptr [esp+4], 20       ; <- site 1, imm32: plain y
++0x2aefa  je   +0x2af20                    ; flag clear -> done, y = 20
++0x2aefc  fild [ScreenHeight]              ; flag set:
++0x2af02  fmul 0.00208333                  ;   / 480
++0x2af08  fmul 42.0
++0x2af0e  fadd 0.5                         ;   round
++0x2af19  add  eax, 20                     ; <- site 2, imm8: y = scaled + 20
+```
+
+So in a spectated demo the feed starts at `round(ScreenHeight / 480 × 42) + 20`
+— about **115** at 1080p, against 20 in a POV demo. That is the whole reason a
+kill feed sits lower when spectating, and `offset` is not moving a feed that was
+at 20: it is replacing the `+ 20` addend in a sum whose other term is ~95.
+
+To line a spectated feed up with a POV one, the offset is
+`20 − round(ScreenHeight / 480 × 42)` — **−75 at 1080p**, −55 at 720p, −107 at
+1440p. Well inside the sign-extended byte.
+
+**One value goes to both sites**, and they do not mean the same thing: site 1 is
+an absolute y, site 2 an addend. `offset −75` therefore puts a POV feed at −75
+(off the top of the screen) while putting a spectated one at 20. That is fine
+when working on spectated demos and wrong if both matter in one session.
 
 ## 4. The console surface
 
