@@ -208,8 +208,9 @@ window.addEventListener("DOMContentLoaded", () => {
     btnLaunchPreview.disabled = true;
     const originalLabel = btnLaunchPreview.textContent;
     btnLaunchPreview.textContent = STRINGS.HIGHLIGHTS.LAUNCHING;
+    const goldsrcHooksDllPath = document.querySelector('#goldsrc-hooks-dll-path-input')?.value?.trim() || null;
     try {
-      await launchDemoPreview(hlaePath, hlPath, highlights);
+      await launchDemoPreview(hlaePath, hlPath, highlights, goldsrcHooksDllPath);
       showToast(STRINGS.HIGHLIGHTS.PREVIEW_LAUNCHING_TOAST, 'info');
     } catch (err) {
       // Already toasted by ipc_bridge.js.

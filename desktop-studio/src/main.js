@@ -53,6 +53,7 @@ const PATH_FIELDS = [
   ['#hl-path-input', '#hl-path-warning'],
   ['#hlae-path-input', '#hlae-path-warning'],
   ['#ffmpeg-override-path-input', '#ffmpeg-path-warning'],
+  ['#goldsrc-hooks-dll-path-input', '#goldsrc-hooks-path-warning'],
 ];
 
 async function refreshPathWarnings() {
@@ -407,6 +408,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const hlaePath = document.querySelector('#hlae-path-input')?.value?.trim() || "";
     const hlPath = document.querySelector('#hl-path-input')?.value?.trim() || "";
     const ffmpegPath = document.querySelector('#ffmpeg-override-path-input')?.value?.trim() || null;
+    const goldsrcHooksDllPath = document.querySelector('#goldsrc-hooks-dll-path-input')?.value?.trim() || null;
     const captureFps = parseInt(document.querySelector('#config-capture-fps')?.value, 10) || 300;
     const obsCaptureFps = parseInt(document.querySelector('#config-obs-capture-fps')?.value, 10) || 120;
     const preRoll = parseFloat(document.querySelector('#config-pre-roll')?.value) || 2.0;
@@ -461,6 +463,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       hlae_path: hlaePath,
       hl_path: hlPath,
       ffmpeg_path: ffmpegPath,
+      goldsrc_hooks_dll_path: goldsrcHooksDllPath,
       pinned_folders: scanPaths,
       demo_folder_history: demoFolderHistory,
       scan_folders_for_demos: scanFoldersForDemos,
@@ -536,6 +539,10 @@ window.addEventListener("DOMContentLoaded", async () => {
       if (settings.ffmpeg_path) {
         const inputEl = document.querySelector('#ffmpeg-override-path-input');
         if (inputEl) inputEl.value = settings.ffmpeg_path;
+      }
+      if (settings.goldsrc_hooks_dll_path) {
+        const inputEl = document.querySelector('#goldsrc-hooks-dll-path-input');
+        if (inputEl) inputEl.value = settings.goldsrc_hooks_dll_path;
       }
       if (settings.hlae_path) {
         // Issue #101: this reads both #hlae-path-input and
@@ -891,9 +898,17 @@ window.addEventListener("DOMContentLoaded", async () => {
   }
   // Every path field, including Half-Life, which the row above says nothing
   // about.
+  //
+  // These also persist on change (blur/Enter), not only via their Browse
+  // buttons and the save-on-close in onCloseRequested. A path typed by hand
+  // into a field whose picker was never used survived only until the app next
+  // exited *cleanly* — and during development the app is routinely killed and
+  // rebuilt instead, which skips onCloseRequested entirely. The GoldSrc Hooks
+  // DLL path is the field where that bites hardest: losing it silently
+  // un-injects the companion DLL on the next run (see build_hlae_process).
   for (const [input] of PATH_FIELDS) {
     document.querySelector(input)
-      ?.addEventListener('change', () => { refreshPathWarnings(); });
+      ?.addEventListener('change', () => { refreshPathWarnings(); persistAppSettings(); });
   }
   refreshPathWarnings();
 
@@ -1053,6 +1068,27 @@ window.addEventListener("DOMContentLoaded", async () => {
         }
       } catch (err) {
         console.error("Error selecting FFmpeg executable:", err);
+      }
+    });
+  }
+
+  const goldsrcHooksBrowseBtn = document.querySelector('#goldsrc-hooks-browse-btn');
+  if (goldsrcHooksBrowseBtn) {
+    goldsrcHooksBrowseBtn.addEventListener('click', async () => {
+      try {
+        const selected = await open({
+          multiple: false,
+          filters: [{ name: STRINGS.MAIN.DLL_FILTER_NAME, extensions: ['dll'] }],
+          title: STRINGS.MAIN.SELECT_GOLDSRC_HOOKS_DLL_TITLE
+        });
+        if (selected) {
+          const path = Array.isArray(selected) ? selected[0] : selected;
+          const inputEl = document.querySelector('#goldsrc-hooks-dll-path-input');
+          if (inputEl) inputEl.value = path;
+          await persistAppSettings();
+        }
+      } catch (err) {
+        console.error("Error selecting dodstudio_goldsrc_hooks.dll:", err);
       }
     });
   }

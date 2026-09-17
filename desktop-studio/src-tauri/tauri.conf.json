@@ -36,7 +36,8 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../../localizations": "localizations"
+      "../../localizations": "localizations",
+      "../../target/i686-pc-windows-msvc/release/dodstudio_goldsrc_hooks.dll": "goldsrc-hooks/dodstudio_goldsrc_hooks.dll"
     }
   },
   "plugins": {

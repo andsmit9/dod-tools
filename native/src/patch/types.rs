@@ -420,6 +420,15 @@ pub struct PatcherConfig {
     pub hlae_path: String,
     pub game_path: String,
     pub ffmpeg_override_path: Option<String>,
+    /// Optional absolute path to `dodstudio_goldsrc_hooks.dll` (the `goldsrc-hooks`
+    /// workspace crate's companion DLL for DoD/GoldSrc-specific fixes --
+    /// sound/animation corrections while spectating; see that crate's
+    /// README). Falls back to `<install dir>/goldsrc-hooks/dodstudio_goldsrc_hooks.dll`
+    /// (see `default_goldsrc_hooks_dll_path`) when unset, mirroring
+    /// `ffmpeg_override_path`'s "override, else bundled" shape. Injected
+    /// alongside `AfxHookGoldSrc.dll` by `build_hlae_process` only if the
+    /// resolved file actually exists, so its absence never breaks a capture.
+    pub goldsrc_hooks_dll_path: Option<String>,
     pub auto_clear_logs: bool,
     pub auto_clear_previews: bool,
     pub auto_clear_temp_demos: bool,
@@ -458,6 +467,24 @@ fn default_capture_fov() -> f32 {
     90.0
 }
 
+/// Where `dodstudio_goldsrc_hooks.dll` lives if nothing overrides it: Tauri's Windows
+/// bundler places `bundle.resources` entries under a `resources` folder
+/// beside the installed app's own executable, and
+/// `desktop-studio/src-tauri/tauri.conf.json` maps this crate's release
+/// build to `resources/goldsrc-hooks/dodstudio_goldsrc_hooks.dll` there. In a dev
+/// build (`npm run tauri dev`) that folder won't exist -- Studio ->
+/// Configuration -> Paths' override field is the way to point at
+/// `target/i686-pc-windows-msvc/release/dodstudio_goldsrc_hooks.dll` directly while
+/// developing. Either way, `build_hlae_process` treats a missing file here
+/// as "not installed" and simply doesn't inject it, same as any other
+/// optional path.
+pub fn default_goldsrc_hooks_dll_path() -> Option<std::path::PathBuf> {
+    std::env::current_exe()
+        .ok()?
+        .parent()
+        .map(|dir| dir.join("resources").join("goldsrc-hooks").join("dodstudio_goldsrc_hooks.dll"))
+}
+
 impl PatcherConfig {
     /// Reconciles `capture_mode` with the legacy `ffmpeg_capture` flag, and
     /// applies the constraints the mode implies.
@@ -482,13 +509,38 @@ impl PatcherConfig {
     pub fn build_hlae_process(&self, extra_engine_args: &str) -> std::process::Command {
         let hlae_exe = &self.hlae_path;
         let hl_exe = &self.game_path;
+        let hlae_dir = std::path::Path::new(hlae_exe).parent();
 
-        let dll_path = match std::path::Path::new(hlae_exe).parent() {
+        let dll_path = match hlae_dir {
             Some(parent) => parent.join("AfxHookGoldSrc.dll"),
             None => std::path::PathBuf::from("AfxHookGoldSrc.dll"),
         };
-
         let hook_dll_str = dll_path.to_string_lossy().replace("/", "\\\\");
+
+        // `-hookDllPath` is repeatable on HLAE's `-customLoader` command line
+        // (see advancedfx/advancedfx's `hlae/Program.cs`,
+        // `ProcessArgsCustomLoader`): each occurrence appends to the inject
+        // list rather than replacing it, so both DLLs get injected into the
+        // same suspended `hl.exe`, in argument order, before it resumes.
+        // goldsrc-hooks (this workspace's `goldsrc-hooks` crate) is optional
+        // -- only added if the resolved path actually exists, so a setup
+        // without it behaves exactly as before. It's inert unless its own
+        // env vars (GOLDSRC_HOOKS_*) are set, which nothing here sets yet --
+        // see the crate's README for what it needs to do anything.
+        //
+        // Resolution order: the user's configured override (Studio ->
+        // Configuration -> Paths), then the bundled default beside this
+        // app's own install, then (for anyone who manually dropped it beside
+        // hlae.exe before this setting existed) that legacy spot.
+        let goldsrc_hooks_dll = self
+            .goldsrc_hooks_dll_path
+            .as_ref()
+            .map(std::path::PathBuf::from)
+            .filter(|p| p.exists())
+            .or_else(|| default_goldsrc_hooks_dll_path().filter(|p| p.exists()))
+            .or_else(|| hlae_dir.map(|parent| parent.join("dodstudio_goldsrc_hooks.dll")).filter(|p| p.exists()));
+        let goldsrc_hooks_dll_str = goldsrc_hooks_dll.map(|p| p.to_string_lossy().replace("/", "\\\\"));
+
         let program_path_str = hl_exe.replace("/", "\\\\");
 
         // HLAE's alpha flags, on every `-customLoader` launch without exception.
@@ -550,17 +602,29 @@ impl PatcherConfig {
         );
 
         let mut cmd = std::process::Command::new(hlae_exe);
-        cmd.args([
-            "-customLoader",
-            "-noGui",
-            "-autoStart",
-            "-hookDllPath",
-            &hook_dll_str,
-            "-programPath",
-            &program_path_str,
-            "-cmdLine",
-            &cmd_line_str,
-        ]);
+        cmd.args(["-customLoader", "-noGui", "-autoStart", "-hookDllPath", &hook_dll_str]);
+        // Say either way. "Optional" used to mean this resolved to nothing and
+        // the launch proceeded in silence, which is indistinguishable from the
+        // DLL loading and doing nothing -- the same log file stays empty and
+        // the dodtools_* commands are equally absent. That cost a live-testing
+        // session to diagnose, so the absent case is now a warning naming every
+        // path that was tried.
+        match &goldsrc_hooks_dll_str {
+            Some(extra_dll) => {
+                log::info!("goldsrc-hooks: injecting {extra_dll}");
+                cmd.args(["-hookDllPath", extra_dll]);
+            }
+            None => log::warn!(
+                "goldsrc-hooks: no dodstudio_goldsrc_hooks.dll found, so the sound/animation fixes and the \
+                 dodtools_* console commands will be absent this session. Tried: override={:?}, \
+                 bundled default={:?}, legacy spot beside hlae.exe={:?}. In a dev build only the \
+                 override is ever present -- set Studio -> Configuration -> Paths -> GoldSrc Hooks DLL.",
+                self.goldsrc_hooks_dll_path,
+                default_goldsrc_hooks_dll_path(),
+                hlae_dir.map(|parent| parent.join("dodstudio_goldsrc_hooks.dll")),
+            ),
+        }
+        cmd.args(["-programPath", &program_path_str, "-cmdLine", &cmd_line_str]);
         cmd.env("SteamAppId", "30");
 
         if let Some(parent) = std::path::Path::new(hlae_exe).parent() {
@@ -606,6 +670,7 @@ impl Default for PatcherConfig {
             hlae_path: String::new(),
             game_path: String::new(),
             ffmpeg_override_path: None,
+            goldsrc_hooks_dll_path: None,
             auto_clear_logs: false,
             auto_clear_previews: false,
             auto_clear_temp_demos: false,

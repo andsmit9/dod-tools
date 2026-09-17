@@ -14,6 +14,9 @@ members = [
     # was outside of entirely until 2026-09-10. It is the bit-level demo
     # reader/writer, so it is the last thing that should be unlinted.
     "dem-patch",
+    # 32-bit cdylib injected into hl.exe; see goldsrc-hooks/README.md. Built
+    # for i686-pc-windows-msvc, not the host target.
+    "goldsrc-hooks",
 ]
 
 [workspace.package]
