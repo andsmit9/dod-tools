@@ -1824,6 +1824,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "goldsrc-hooks"
+version = "0.10.0"
+dependencies = [
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "gtk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"

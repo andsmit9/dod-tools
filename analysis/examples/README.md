@@ -18,6 +18,15 @@ ignores them; `cargo build --examples` and `cargo test` compile them.
 | `reconcile_probe` | Do derived kill counts agree with the server's own frag counter? |
 | `reconnect_probe` | What does a reconnect do to the server's score counters? |
 | `capwindow_probe` | How far is a flag capture from the objective-score credits it earned? |
+| `weapon_switch_probe` | Where does a player rapidly cycle weapons, on the demo's own clock? |
+
+`weapon_switch_probe` exists because `goldsrc-hooks`' log cannot answer "where
+in the demo was that?". Its clock counts from when the *client* loaded and
+keeps running while playback is paused, so it has no fixed relationship to a
+position in the file. This reads `entity_state_t::weaponmodel` — the same
+replicated field the animation fix reads — off `frame.time`, which is the
+demo's own, and prints bursts of rapid switching. Matching a burst's shape
+against the log is how the two clocks get lined up; see the module doc.
 
 Run any of them against a single demo:
 
