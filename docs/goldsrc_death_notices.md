@@ -236,8 +236,15 @@ python goldsrc-hooks/tools/verify_deathmsg_offsets.py [path-to-client.dll]
 
 ## 5. Live findings, 2026-09-16
 
-Tested in a real session against an HLTV demo. `max`, `offset`, `block` and
-`fake` all work, and two things worth recording came out of it.
+Tested in a real session against an HLTV demo, and confirmed on screen: eight
+and then ten death-notice lines rendering at once, against the four the game
+ships with, with the feed's y visibly moved by `offset`. The relocated array
+draws correctly — no garbage in the slots past the stock five, and the feed
+survives the level's `InitHUDData`, which now clears the relocated buffer
+because the reference it uses was patched along with everything else.
+
+Three bugs surfaced between "the command reports success" and "the thing works",
+all found live and all recorded below.
 
 ### The `.text` writes stick
 
