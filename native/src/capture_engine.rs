@@ -604,7 +604,10 @@ pub fn spawn_capture_engine(
             // The HLAE alpha flags that used to be composed here now live in
             // `build_hlae_process` itself, so every `-customLoader` launch this
             // app makes carries them, not just a capture batch.
-            let extra_args = "+exec dodtools_helper.cfg +playdemo primer".to_string();
+            let extra_args = format!(
+                "+exec dodtools_helper.cfg +playdemo {}",
+                crate::shared::paths::PRIMER_DEMO_STEM
+            );
 
             let dummy_path = active_export_dir.join("DOD_BATCH_DONE");
             let _ = std::fs::remove_dir_all(&dummy_path);
@@ -656,7 +659,7 @@ pub fn spawn_capture_engine(
             // `exit_trigger`) restarts the whole demo from the top as a side
             // effect — harmless in frame-sequence mode (which is already
             // mid-movie-recording throughout), but in OBS mode it replayed
-            // primer.dem *and* chain_01.dem from tick 0, twice, adding ~50s to
+            // dodtools_primer.dem *and* dodtools_chain_01.dem from tick 0, twice, adding ~50s to
             // a real batch before `exit_trigger` ever got written. The
             // BATCH_COMPLETE marker already exists and already fires
             // `ObsSession::on_marker`'s `end_block()` moments before this —
@@ -1006,9 +1009,9 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
-        std::fs::write(dod.join("primer.dem"), b"x").unwrap();
-        std::fs::write(dod.join("chain_01.dem"), b"x").unwrap();
-        std::fs::write(dod.join("chain_02.dem"), b"x").unwrap();
+        std::fs::write(dod.join("dodtools_primer.dem"), b"x").unwrap();
+        std::fs::write(dod.join("dodtools_chain_01.dem"), b"x").unwrap();
+        std::fs::write(dod.join("dodtools_chain_02.dem"), b"x").unwrap();
         std::fs::write(dod.join("not_a_chain_demo.dem"), b"x").unwrap();
 
         {
@@ -1022,9 +1025,9 @@ mod tests {
             );
         }
 
-        assert!(!dod.join("primer.dem").exists());
-        assert!(!dod.join("chain_01.dem").exists());
-        assert!(!dod.join("chain_02.dem").exists());
+        assert!(!dod.join("dodtools_primer.dem").exists());
+        assert!(!dod.join("dodtools_chain_01.dem").exists());
+        assert!(!dod.join("dodtools_chain_02.dem").exists());
         assert!(dod.join("not_a_chain_demo.dem").exists(), "must not touch an unrelated file");
 
         let _ = std::fs::remove_dir_all(&root);
@@ -1038,8 +1041,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
-        std::fs::write(dod.join("primer.dem"), b"x").unwrap();
-        std::fs::write(dod.join("chain_01.dem"), b"x").unwrap();
+        std::fs::write(dod.join("dodtools_primer.dem"), b"x").unwrap();
+        std::fs::write(dod.join("dodtools_chain_01.dem"), b"x").unwrap();
 
         {
             let _guard = CaptureCleanupGuard::new(
@@ -1052,8 +1055,8 @@ mod tests {
             );
         }
 
-        assert!(dod.join("primer.dem").exists());
-        assert!(dod.join("chain_01.dem").exists());
+        assert!(dod.join("dodtools_primer.dem").exists());
+        assert!(dod.join("dodtools_chain_01.dem").exists());
 
         let _ = std::fs::remove_dir_all(&root);
     }

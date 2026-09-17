@@ -7,16 +7,32 @@ pub fn get_appdata_dir() -> PathBuf {
     path
 }
 
+/// Stem of the primer demo `build_batch_queue` writes into the game's `dod/`
+/// folder. The `dodtools_` prefix matches every other file this app writes
+/// there (`dodtools_helper.cfg`, `dodtools_capture_done.cfg`) and keeps the
+/// name out of the space a player's own demo could plausibly occupy (#197).
+pub const PRIMER_DEMO_STEM: &str = "dodtools_primer";
+
+/// Prefix of every patched chain demo `build_batch_queue` writes into `dod/`,
+/// followed by a zero-padded job number. See [`PRIMER_DEMO_STEM`] for why the
+/// `dodtools_` part is there.
+pub const CHAIN_DEMO_PREFIX: &str = "dodtools_chain_";
+
 /// True for exactly the filenames `build_batch_queue` gives patched chain
-/// demos (`chain_01.dem`, `chain_9999.dem`, ...). No cap on digit count --
-/// a batch of over a hundred thousand demos is implausible, but nothing here
-/// assumes an upper bound either. A plain `starts_with("chain_")` would also
-/// match a source demo that happens to share the prefix, e.g. a player named
-/// "chain" with a demo called `chain_harrington_round1.dem` -- requiring the
-/// rest of the name to be all digits rules that out.
+/// demos (`dodtools_chain_01.dem`, `dodtools_chain_9999.dem`, ...). No cap on
+/// digit count -- a batch of over a hundred thousand demos is implausible, but
+/// nothing here assumes an upper bound either. A plain
+/// `starts_with(CHAIN_DEMO_PREFIX)` would also match a source demo that
+/// happens to share the prefix -- requiring the rest of the name to be all
+/// digits rules that out.
+///
+/// Bare `chain_NN.dem` names, which this app wrote before #197, are
+/// deliberately *not* matched: the whole point of the prefix is that a name
+/// without it might be the user's own demo, and leaving a stale file behind is
+/// the strictly safer failure than deleting someone's recording.
 pub fn is_chain_demo_filename(filename: &str) -> bool {
     filename
-        .strip_prefix("chain_")
+        .strip_prefix(CHAIN_DEMO_PREFIX)
         .and_then(|rest| rest.strip_suffix(".dem"))
         .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
 }
@@ -24,9 +40,9 @@ pub fn is_chain_demo_filename(filename: &str) -> bool {
 /// Stable identity for one capture take, shared by the capture and render
 /// pipelines so they can correlate without either knowing about the other.
 ///
-/// Takes land at `<capture_dir>/<session_id>/chain_JJ_bN/`, so the key is
-/// normally the last two path components lowercased:
-/// `session_20260818_142233/chain_01_b0`. Deliberately *not* the absolute
+/// Takes land at `<capture_dir>/<session_id>/dodtools_chain_JJ_bN/`, so the
+/// key is normally the last two path components lowercased:
+/// `session_20260818_142233/dodtools_chain_01_b0`. Deliberately *not* the absolute
 /// path — capture output routinely gets moved onto a different drive before
 /// rendering, which would invalidate it — and deliberately not the take name
 /// alone, which repeats every batch.
@@ -129,7 +145,17 @@ pub fn clear_capture_scratch(
     }
 
     if auto_clear_temp_demos && !save_local_patched_copy {
-        remove_scratch_file(&dod_dir.join("primer.dem"), "Auto-clear Temp Demos");
+        // Retried, and logged loudly on final failure -- unlike the best-effort
+        // removals above, the last demo in a batch can still have hl.exe's file
+        // handle attached here (see #198's investigation), and a leftover chain
+        // file after auto-clear went completely unnoticed the first time this
+        // happened.
+        let primer_demo = format!("{PRIMER_DEMO_STEM}.dem");
+        if let Some(e) = remove_file_retrying(&dod_dir.join(&primer_demo)) {
+            crate::log_markdown(&format!(
+                "⚠️ **Cleanup** — could not remove {primer_demo} after retrying: {e} (auto_clear_temp_demos left it behind; hl.exe may still have had it open)"
+            ));
+        }
         if let Ok(entries) = std::fs::read_dir(&dod_dir) {
             for entry in entries.flatten() {
                 let filename = entry.file_name().to_string_lossy().to_string();
@@ -215,24 +241,24 @@ mod tests {
 
     #[test]
     fn test_take_key_uses_last_two_components_lowercased() {
-        let key = take_key(Path::new(r"D:\Captures\Session_20260818_142233\Chain_01_b0"));
-        assert_eq!(key, Some("session_20260818_142233/chain_01_b0".to_string()));
+        let key = take_key(Path::new(r"D:\Captures\Session_20260818_142233\Dodtools_Chain_01_b0"));
+        assert_eq!(key, Some("session_20260818_142233/dodtools_chain_01_b0".to_string()));
     }
 
     #[test]
     fn test_take_key_is_stable_across_drives() {
         // The same take copied to a different drive must produce the same key —
         // this is the whole reason the absolute path isn't used.
-        let a = take_key(Path::new(r"D:\Captures\session_1\chain_01_b0"));
-        let b = take_key(Path::new(r"X:\somewhere\else\session_1\chain_01_b0"));
+        let a = take_key(Path::new(r"D:\Captures\session_1\dodtools_chain_01_b0"));
+        let b = take_key(Path::new(r"X:\somewhere\else\session_1\dodtools_chain_01_b0"));
         assert_eq!(a, b);
         assert!(a.is_some());
     }
 
     #[test]
     fn test_take_key_distinguishes_sessions() {
-        let a = take_key(Path::new(r"D:\c\session_1\chain_01_b0"));
-        let b = take_key(Path::new(r"D:\c\session_2\chain_01_b0"));
+        let a = take_key(Path::new(r"D:\c\session_1\dodtools_chain_01_b0"));
+        let b = take_key(Path::new(r"D:\c\session_2\dodtools_chain_01_b0"));
         assert_ne!(a, b);
     }
 
@@ -250,16 +276,16 @@ mod tests {
         // wav/bmp — one level deeper, inside HLAE's own take0000 auto-numbered
         // subfolder. Both must resolve to the same key or auto-Rendered can
         // never correlate a finished render back to its highlights.
-        let capture_side = take_key(Path::new(r"D:\Captures\session_1\chain_01_b0"));
-        let render_side = take_key(Path::new(r"D:\Captures\session_1\chain_01_b0\take0000"));
+        let capture_side = take_key(Path::new(r"D:\Captures\session_1\dodtools_chain_01_b0"));
+        let render_side = take_key(Path::new(r"D:\Captures\session_1\dodtools_chain_01_b0\take0000"));
         assert_eq!(capture_side, render_side);
-        assert_eq!(capture_side, Some("session_1/chain_01_b0".to_string()));
+        assert_eq!(capture_side, Some("session_1/dodtools_chain_01_b0".to_string()));
     }
 
     #[test]
     fn test_take_key_handles_higher_numbered_takes() {
-        let key = take_key(Path::new(r"D:\Captures\session_1\chain_01_b0\take0003"));
-        assert_eq!(key, Some("session_1/chain_01_b0".to_string()));
+        let key = take_key(Path::new(r"D:\Captures\session_1\dodtools_chain_01_b0\take0003"));
+        assert_eq!(key, Some("session_1/dodtools_chain_01_b0".to_string()));
     }
 
     #[test]
@@ -289,15 +315,15 @@ mod tests {
 
     #[test]
     fn is_chain_demo_filename_matches_real_output_names() {
-        assert!(is_chain_demo_filename("chain_01.dem"));
-        assert!(is_chain_demo_filename("chain_9999.dem"));
+        assert!(is_chain_demo_filename("dodtools_chain_01.dem"));
+        assert!(is_chain_demo_filename("dodtools_chain_9999.dem"));
     }
 
-    /// No digit-count cap: a batch large enough to need `chain_100500.dem`
+    /// No digit-count cap: a batch large enough to need `dodtools_chain_100500.dem`
     /// must still be cleaned up correctly, not silently left behind.
     #[test]
     fn is_chain_demo_filename_has_no_upper_bound_on_digit_count() {
-        assert!(is_chain_demo_filename("chain_100500.dem"));
+        assert!(is_chain_demo_filename("dodtools_chain_100500.dem"));
     }
 
     /// A source demo that happens to share the "chain_" prefix must never be
@@ -306,9 +332,9 @@ mod tests {
     fn is_chain_demo_filename_rejects_lookalike_source_demos() {
         assert!(!is_chain_demo_filename("chain_harrington_round1.dem"));
         assert!(!is_chain_demo_filename("chain_.dem"));
-        assert!(!is_chain_demo_filename("chain_01.dem.bak"));
+        assert!(!is_chain_demo_filename("dodtools_chain_01.dem.bak"));
         assert!(!is_chain_demo_filename("prefix_chain_01.dem"));
-        assert!(!is_chain_demo_filename("chain_01.cfg"));
+        assert!(!is_chain_demo_filename("dodtools_chain_01.cfg"));
     }
 
     /// Nothing but that one file may be touched — the game folder holds the
@@ -344,7 +370,9 @@ mod tests {
 /// released yet, and even confirming the process itself has left the process
 /// list (`sysinfo`) does not guarantee it either -- kernel object cleanup can
 /// lag a beat past both. The demo files hl.exe was just playing
-/// (`primer.dem`, `chain_NN.dem`) are what this exists for. See #198.
+/// (`dodtools_primer.dem`, `dodtools_chain_NN.dem`) are what this exists for,
+/// and both cleanup guards (`CaptureCleanupGuard` in `capture_engine.rs`,
+/// `WorkspaceGuard` in `patch/builder.rs`) call it for them. See #198.
 ///
 /// #218 asked whether the sibling auto-clear settings share that race. They do
 /// not, and the answer is worth recording because it is not guessable from the
@@ -358,10 +386,11 @@ mod tests {
 /// * `_preview.dem` files belong to a separate preview session, not to the
 ///   capture batch whose guard runs this.
 ///
-/// Every scratch file goes through this anyway. When the file is not locked --
-/// which, per the above, is the overwhelmingly common case -- the first
-/// attempt succeeds and it costs nothing, and it means one uniform path
-/// instead of a fast one and a careful one that can drift apart.
+/// Every scratch file goes through this anyway -- `remove_scratch_file` is a
+/// thin reporting wrapper over it. When the file is not locked, which per the
+/// above is the overwhelmingly common case, the first attempt succeeds and it
+/// costs nothing, and it means one uniform path instead of a fast one and a
+/// careful one that can drift apart.
 ///
 /// Returns the last error seen, or `None` on success or if the file was
 /// already gone -- callers decide how loudly to report a real failure; this
@@ -482,7 +511,7 @@ mod remove_file_retrying_tests {
         let dir = std::env::temp_dir().join(format!("dod_rfr_plain_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("chain_01.dem");
+        let file = dir.join("dodtools_chain_01.dem");
         std::fs::write(&file, b"demo").unwrap();
 
         assert!(remove_file_retrying(&file).is_none());
@@ -504,7 +533,7 @@ mod remove_file_retrying_tests {
         let dir = std::env::temp_dir().join(format!("dod_rfr_delayed_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("chain_02.dem");
+        let file = dir.join("dodtools_chain_02.dem");
         std::fs::write(&file, b"demo").unwrap();
 
         let handle = std::fs::OpenOptions::new().read(true).share_mode(1).open(&file).unwrap();
