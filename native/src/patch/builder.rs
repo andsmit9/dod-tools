@@ -8,6 +8,7 @@ use crate::patch::types::{
     CaptureWorker, PatchEvent,
 };
 use crate::patch::engine::StreamPatcher;
+use crate::shared::paths::{CHAIN_DEMO_PREFIX, PRIMER_DEMO_STEM};
 
 // ── Frame-time helpers ───────────────────────────────────────────────────────
 
@@ -656,14 +657,17 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
         // launched, so dod/'s drive needed the full batch footprint either
         // way. capture_directories is only ever about where recorded video
         // blocks land now, not these small demo files. See issue #8.
-        let primer_out = dod_dir.join("primer.dem");
+        let primer_out = dod_dir.join(format!("{PRIMER_DEMO_STEM}.dem"));
 
-        // Delay playdemo chain_01 to tick 500 (~5 seconds) to allow the engine to fully finish the 
+        // Delay playdemo of the first chain to tick 500 (~5 seconds) to allow the engine to fully finish the 
         // 2-second GoldSrc server handshake without buffer overflows before jumping to the first real chain.
         let mut primer_scheduled = Vec::new();
         helper_cfg_content.push_str("# Demo specific next demos\n");
-        helper_cfg_content.push_str("alias primer_next \"playdemo chain_01\"\n");
-        primer_scheduled.push((crate::patch::PRIMER_DELAY_TICKS, "primer_next".to_string()));
+        let primer_next_alias = format!("{PRIMER_DEMO_STEM}_next");
+        helper_cfg_content.push_str(&format!(
+            "alias {primer_next_alias} \"playdemo {CHAIN_DEMO_PREFIX}01\"\n"
+        ));
+        primer_scheduled.push((crate::patch::PRIMER_DELAY_TICKS, primer_next_alias));
 
         jobs.push(PatchJob {
             source_demo: first_source.clone(),
@@ -709,8 +713,8 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
 
         let demo_fps = streaks.first().map(|s| s.demo_fps).filter(|&fps| fps > 0.0).unwrap_or(30.0);
 
-        let demo_name = format!("chain_{:02}", job_idx + 1);
-        let next_demo_name = format!("chain_{:02}", job_idx + 2);
+        let demo_name = format!("{}{:02}", CHAIN_DEMO_PREFIX, job_idx + 1);
+        let next_demo_name = format!("{}{:02}", CHAIN_DEMO_PREFIX, job_idx + 2);
         let output_name = format!("{}.dem", demo_name);
         // Lands directly in dod/ -- see the primer's own resolution above for why.
         let output_demo = dod_dir.join(&output_name);
@@ -1652,12 +1656,12 @@ mod tests {
         let expected_dod_dir = std::path::Path::new(&config.game_path).parent().unwrap().join("dod");
 
         let primer = &jobs[0];
-        assert_eq!(primer.output_demo, expected_dod_dir.join("primer.dem"));
+        assert_eq!(primer.output_demo, expected_dod_dir.join("dodtools_primer.dem"));
         assert_eq!(primer.streaks.len(), 0);
 
         let job = &jobs[1];
         assert_eq!(job.source_demo, "demo1.dem");
-        assert_eq!(job.output_demo, expected_dod_dir.join("chain_01.dem"));
+        assert_eq!(job.output_demo, expected_dod_dir.join("dodtools_chain_01.dem"));
         assert_eq!(job.streaks.len(), 2);
         assert_eq!(job.streaks[0].start_tick, 1000);
         assert_eq!(job.streaks[0].end_tick, 1500); // Merged 1000-1200 and 1300-1500
@@ -1677,20 +1681,74 @@ mod tests {
         // the naming the helper cfg's _route_N alias writes to.
         assert_eq!(job.blocks[0].start_tick, 1000);
         assert_eq!(job.blocks[0].end_tick, 1500);
-        assert_eq!(job.blocks[0].demo_name, "chain_01");
+        assert_eq!(job.blocks[0].demo_name, "dodtools_chain_01");
         assert!(
-            job.blocks[0].take_folder.ends_with("chain_01_b0"),
-            "expected take folder to end with chain_01_b0, got {:?}",
+            job.blocks[0].take_folder.ends_with("dodtools_chain_01_b0"),
+            "expected take folder to end with dodtools_chain_01_b0, got {:?}",
             job.blocks[0].take_folder
         );
         assert!(
-            job.blocks[0].take_key.ends_with("/chain_01_b0"),
-            "expected take key to end with /chain_01_b0, got {:?}",
+            job.blocks[0].take_key.ends_with("/dodtools_chain_01_b0"),
+            "expected take key to end with /dodtools_chain_01_b0, got {:?}",
             job.blocks[0].take_key
         );
 
         // The primer never records anything, so it must carry no blocks.
         assert!(primer.blocks.is_empty());
+    }
+
+    /// Every scheduled command `build_batch_queue` emits is an alias name built
+    /// from `demo_name`, and `engine.rs` silently truncates anything at or over
+    /// `MAX_CONSOLE_CMD_SAFE_LEN` when it writes the ConsoleCommand frame -- a
+    /// too-long name would not fail, it would just stop working. The
+    /// `dodtools_` prefix (#197) made all of these 9 bytes longer, so pin it.
+    #[test]
+    fn every_injected_command_stays_under_the_goldsrc_cbuf_limit() {
+        let mut config = PatcherConfig::default();
+        let temp_game_path = std::env::temp_dir().join("dod_test_cbuf_len");
+        std::fs::create_dir_all(temp_game_path.join("dod")).expect("dummy dod dir");
+        config.game_path = temp_game_path.to_string_lossy().to_string();
+        config.primary_media_dir = Some(temp_game_path.clone());
+
+        let raw_streaks = vec![CaptureStreak {
+            start_tick: 1000,
+            end_tick: 1200,
+            source_demo: "demo1.dem".to_string(),
+            target_player: None,
+            kill_count: 3,
+            timeline_string: String::new(),
+            duration_string: String::new(),
+            player_index: 0,
+            kills: Vec::new(),
+            start_index: 0,
+            end_index: 2,
+            total_demo_frames: 3000,
+            demo_fps: 100.0,
+            viewdemo_times: Vec::new(),
+            frame_times: std::sync::Arc::new(Vec::new()),
+            match_start_tick: None,
+            status: Default::default(),
+        }];
+
+        let (jobs, _) =
+            build_batch_queue(raw_streaks, &config, &std::collections::HashMap::new()).unwrap();
+
+        let total_commands: usize = jobs.iter().map(|j| j.scheduled_commands.len()).sum();
+        assert!(
+            total_commands > 0,
+            "nothing to check -- the fixture produced no scheduled commands at all"
+        );
+
+        for job in &jobs {
+            for (tick, cmd) in &job.scheduled_commands {
+                assert!(
+                    cmd.len() < crate::patch::MAX_CONSOLE_CMD_SAFE_LEN,
+                    "scheduled command {cmd:?} at tick {tick} is {} bytes,                      at or over the {} byte Cbuf_AddTextToBuffer budget",
+                    cmd.len(),
+                    crate::patch::MAX_CONSOLE_CMD_SAFE_LEN
+                );
+            }
+        }
     }
 
     #[test]
@@ -1787,16 +1845,17 @@ mod tests {
 
     #[test]
     fn workspace_guard_drop_actually_removes_chain_demos_when_auto_clear_is_on() {
-        // Verifies the fix for issue #12: the cleanup filter matched
-        // "dodtools_chain_*.dem", but build_batch_queue names output demos
-        // "chain_NN.dem" (no prefix) -- see `demo_name` above -- so the
+        // Verifies the fix for issue #12: the cleanup filter and the
+        // output-demo naming in `build_batch_queue` disagreed, so the
         // filter never matched and these files were never cleaned up
-        // regardless of the auto_clear_temp_demos setting.
+        // regardless of the auto_clear_temp_demos setting. Both sides now
+        // go through `CHAIN_DEMO_PREFIX`/`is_chain_demo_filename` (#197),
+        // which is what keeps them from drifting apart again.
         let exit_trigger = std::env::temp_dir().join("dod_test_workspace_guard_exit_trigger");
         let dod_dir = exit_trigger.parent().unwrap().join("dod");
         std::fs::create_dir_all(&dod_dir).unwrap();
         std::fs::create_dir_all(&exit_trigger).unwrap();
-        let chain_demo = dod_dir.join("chain_01.dem");
+        let chain_demo = dod_dir.join("dodtools_chain_01.dem");
         std::fs::write(&chain_demo, b"fake demo bytes").unwrap();
 
         {
@@ -1814,7 +1873,7 @@ mod tests {
 
         assert!(
             !chain_demo.exists(),
-            "chain_01.dem should have been removed by WorkspaceGuard::drop with auto_clear_temp_demos on"
+            "dodtools_chain_01.dem should have been removed by WorkspaceGuard::drop with auto_clear_temp_demos on"
         );
 
         let _ = std::fs::remove_dir_all(&dod_dir);
@@ -2576,8 +2635,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
-        std::fs::write(dod.join("primer.dem"), b"x").unwrap();
-        std::fs::write(dod.join("chain_01.dem"), b"x").unwrap();
+        std::fs::write(dod.join("dodtools_primer.dem"), b"x").unwrap();
+        std::fs::write(dod.join("dodtools_chain_01.dem"), b"x").unwrap();
 
         {
             let _guard = WorkspaceGuard {
@@ -2592,8 +2651,8 @@ mod tests {
             };
         }
 
-        assert!(dod.join("primer.dem").exists());
-        assert!(dod.join("chain_01.dem").exists());
+        assert!(dod.join("dodtools_primer.dem").exists());
+        assert!(dod.join("dodtools_chain_01.dem").exists());
 
         let _ = std::fs::remove_dir_all(&root);
     }

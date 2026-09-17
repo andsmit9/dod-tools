@@ -2700,7 +2700,7 @@ mod tests {
 
     fn block(block_index: usize, record_start_tick: i32, record_stop_tick: i32) -> CaptureBlock {
         CaptureBlock {
-            demo_name: "chain_01".to_string(),
+            demo_name: "dodtools_chain_01".to_string(),
             block_index,
             drive_index: 0,
             take_folder: std::path::PathBuf::from("take"),

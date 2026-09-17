@@ -863,12 +863,12 @@ mod tests {
     #[test]
     fn a_video_take_with_audio_is_renderable_without_a_wav() {
         let root = scratch("obs_take");
-        let take = root.join("chain_01_b0").join("take0000");
+        let take = root.join("dodtools_chain_01_b0").join("take0000");
         write_named_video(&take, "all", "mp4", &mp4_with_audio());
         assert!(collect_wav_files(&take).is_empty(), "no wav, by construction");
         assert!(is_renderable_take(&take));
         // And through the take* nesting, which is how the capture side asks.
-        assert!(is_renderable_take(&root.join("chain_01_b0")));
+        assert!(is_renderable_take(&root.join("dodtools_chain_01_b0")));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -877,7 +877,7 @@ mod tests {
     #[test]
     fn a_silent_video_take_is_not_renderable() {
         let root = scratch("silent");
-        let take = root.join("chain_01_b0").join("take0000");
+        let take = root.join("dodtools_chain_01_b0").join("take0000");
         write_named_video(&take, "all", "mp4", &mp4_without_audio());
         assert!(
             !is_renderable_take(&take),
@@ -1107,7 +1107,7 @@ mod tests {
     #[test]
     fn scan_finds_an_obs_take_with_no_wav() {
         let root = scratch("obs_scan");
-        let take = root.join("chain_01_b0").join("take0000");
+        let take = root.join("dodtools_chain_01_b0").join("take0000");
         write_named_video(&take, "all", "mp4", &mp4_with_audio());
 
         let clips = scan(&take);
@@ -1124,12 +1124,12 @@ mod tests {
     #[test]
     fn scan_names_an_obs_take_from_demo_and_take_not_a_wav() {
         let root = scratch("obs_naming");
-        let take = root.join("some_demo").join("chain_02_b1").join("take0000");
+        let take = root.join("some_demo").join("dodtools_chain_02_b1").join("take0000");
         write_named_video(&take, "all", "mp4", &mp4_with_audio());
 
         let clips = scan(&take);
         assert_eq!(clips.len(), 1);
-        assert!(clips[0].base_name.contains("chain_02_b1"), "{}", clips[0].base_name);
+        assert!(clips[0].base_name.contains("dodtools_chain_02_b1"), "{}", clips[0].base_name);
         assert!(clips[0].base_name.ends_with("-obs"), "{}", clips[0].base_name);
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -1140,7 +1140,7 @@ mod tests {
     #[test]
     fn scan_does_not_find_a_silent_obs_take() {
         let root = scratch("obs_silent_scan");
-        let take = root.join("chain_01_b0").join("take0000");
+        let take = root.join("dodtools_chain_01_b0").join("take0000");
         write_named_video(&take, "all", "mp4", &mp4_without_audio());
 
         let clips = scan(&take);
@@ -1169,7 +1169,7 @@ mod tests {
     #[test]
     fn a_silent_stream_beside_an_audible_one_is_not_scanned_even_though_the_take_is() {
         let root = scratch("mixed_streams");
-        let take = root.join("chain_01_b0").join("take0000");
+        let take = root.join("dodtools_chain_01_b0").join("take0000");
         write_named_video(&take, "all", "mp4", &mp4_with_audio());
         write_named_video(&take, "second", "mp4", &mp4_without_audio());
 
@@ -1187,7 +1187,7 @@ mod tests {
     #[test]
     fn a_hud_bundle_with_no_wav_and_a_silent_all_stream_is_not_scanned() {
         let root = scratch("hud_bundle_silent_all");
-        let take = root.join("chain_01_b0").join("take0000");
+        let take = root.join("dodtools_chain_01_b0").join("take0000");
         // "all" is silent, but some other stream carries audio, so the take
         // as a whole still passes `take_shape_is_renderable`.
         write_named_video(&take, "all", "mp4", &mp4_without_audio());
@@ -1206,7 +1206,7 @@ mod tests {
     #[test]
     fn a_hud_bundle_with_no_wav_admits_all_but_not_the_hud_pair() {
         let root = scratch("hud_bundle_no_wav");
-        let take = root.join("chain_01_b0").join("take0000");
+        let take = root.join("dodtools_chain_01_b0").join("take0000");
         write_named_video(&take, "all", "mp4", &mp4_with_audio());
         write_named_video(&take, "hudcolor", "mp4", &mp4_without_audio());
         write_named_video(&take, "hudalpha", "mp4", &mp4_without_audio());

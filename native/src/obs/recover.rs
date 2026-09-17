@@ -128,10 +128,10 @@ mod tests {
     #[test]
     fn recognises_a_take_folder() {
         assert!(looks_like_ours(Path::new(
-            r"D:\dod-tools\exports\chain_01_b0\take0000\all"
+            r"D:\dod-tools\exports\dodtools_chain_01_b0\take0000\all"
         )));
         assert!(looks_like_ours(Path::new(
-            "/mnt/exports/chain_01_b0/take0000/all"
+            "/mnt/exports/dodtools_chain_01_b0/take0000/all"
         )));
     }
 
