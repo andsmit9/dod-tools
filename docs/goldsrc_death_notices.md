@@ -169,6 +169,37 @@ checking the ones Rust uses. That gap is now closed — see below.
 **The ceiling is 127**, set by the two `cmp r32, imm8` loop bounds. Widening
 those instructions would overwrite the ones after them.
 
+### Provenance of the HLAE comparison
+
+What follows was derived by **observing `AfxHookGoldSrc.dll`'s compiled code** —
+a binary shipped to users and installed on this machine — not from HLAE's
+source. No HLAE source was read, copied or adapted, and none of it is present in
+this repository.
+
+What was taken from HLAE is a *technique* (detour a signature-scanned span) and a
+*convention* (the `??` spelling of a byte pattern, kept identical so a signature
+could move between the projects). The technique is a decades-old one, not
+HLAE's invention; the convention is a notation. Everything specific here is our
+own: `Y_PATTERN` was derived from DoD's `client.dll`, which HLAE has no patterns
+for at all, and the stub steals different instructions from a different function.
+
+Short excerpts of HLAE's disassembly and its pattern-key names appear above as
+factual description of what the machine code does, for interoperability.
+
+That keeps this the same line the project already draws elsewhere — see
+`docs/` on the vendored `dem-patch` fork and the coldemoplayer reference:
+**ideas yes, code no.** Two things would change the position and should be
+checked before either happens:
+
+- **Reading HLAE's source** — e.g. lifting its pattern database or its hooking
+  framework rather than re-deriving equivalents. Then `advancedfx`'s licence
+  governs, and it has to be read first. This install's `readme.txt` points at
+  `./LICENSES/advancedfx/LICENSE`, which the shipped folder does not contain, so
+  the authoritative copy is the one in `github.com/advancedfx/advancedfx`.
+- **Contributing upstream.** A patch sent to HLAE is licensed on *their* terms,
+  not this repository's. That is a deliberate choice to make when the time
+  comes, not a consequence of having written the code here first.
+
 ### How HLAE does the same job, and how this differs
 
 Worth recording, because the two approaches differ in kind rather than detail.
