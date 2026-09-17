@@ -13,15 +13,20 @@ Two independent fixes, each off by default and toggled by its own env var:
 - **Animation fix** (`GOLDSRC_HOOKS_ANIM_FIX=1`): corrects MG42/MG34/BAR/Bren
   viewmodel deploy (bipod up/down) animations while spectating in-eye.
 
-Plus one control surface, always available and doing nothing until used:
+Plus two control surfaces, always available and doing nothing until used:
 
 - **Death notices** (`dodtools_deathmsg`): raises DoD's hard-coded four-line
   cap on the kill feed, moves it down the screen, hides frags involving chosen
   players, or injects one by hand. HLAE's `mirv_deathmsg` supports only
   `cstrike` and `tfc`, so none of it works for DoD -- see
   `docs/goldsrc_death_notices.md`.
+- **Objective icons** (`dodtools_objectives`): places the territory-flag icon
+  row in the top-left corner, and the objective timer beside it. The game draws
+  both ~117 pixels lower at 1080p while spectating than it does in a POV demo,
+  which is why the same map captured both ways does not line up -- see
+  `docs/goldsrc_objective_icons.md`.
 
-All three live in one DLL since they share the same engine-interface bootstrap;
+All four live in one DLL since they share the same engine-interface bootstrap;
 set only the env var for whichever fix you want active.
 
 ## Building
@@ -53,9 +58,13 @@ Produces `target/i686-pc-windows-msvc/release/dodstudio_goldsrc_hooks.dll` and
 ## Status
 
 The animation fix and all four `dodtools_deathmsg` subcommands are live-proven
-against a running game. The sound fix is confirmed by static analysis only --
-see the module docs in `src/engine.rs` and `src/sound_fix.rs` for what is
-established from the DoD 1.3 game files vs. what still needs a live check.
+against a running game. The sound fix and `dodtools_objectives` are confirmed by
+static analysis only -- see the module docs in `src/engine.rs`,
+`src/sound_fix.rs` and `src/objicons.rs` for what is established from the DoD
+1.3 game files vs. what still needs a live check. For the two detours
+`dodtools_objectives` installs, "static analysis" means
+`tools/verify_objicons_offsets.py` run against the shipped `client.dll`, which
+is the same standard `dodtools_deathmsg` was held to before its live run.
 
 A crash inside the game leaves no dump, WER record or event-log entry, because
 GoldSrc installs its own unhandled-exception filter. `src/crash.rs` logs the
