@@ -429,12 +429,24 @@ pub fn cut(
                             .position(|f| f.time >= lo)
                             .unwrap_or(0);
                         if chain.is_empty() {
-                            let synthetic = synthetic_baseline_frame(&anchor, payload, None);
+                            let synthetic = synthetic_baseline_frame(&anchor, payload, None, 1);
                             e.frames.insert(insert_at, synthetic);
                         } else {
+                            // Burst position, counting down: the frame furthest
+                            // in the past (offset 0) gets the largest backdate,
+                            // the frame right before the anchor gets 1. See
+                            // `synthetic_baseline_frame`'s doc comment for why
+                            // this can't just clone the anchor's own sequence
+                            // numbers for every frame in the chain.
+                            let chain_len = chain.len();
                             for (offset, seq) in chain.iter().enumerate() {
-                                let synthetic =
-                                    synthetic_baseline_frame(&anchor, payload.clone(), Some(*seq));
+                                let backdate = (chain_len - offset) as i32;
+                                let synthetic = synthetic_baseline_frame(
+                                    &anchor,
+                                    payload.clone(),
+                                    Some(*seq),
+                                    backdate,
+                                );
                                 e.frames.insert(insert_at + offset, synthetic);
                             }
                         }
@@ -733,10 +745,31 @@ fn encode_synthetic_payload(state: &ReplayedState, aux: AuxRefCell) -> Vec<u8> {
 /// CL_UPDATE_MASK]` — an exact numeric match on `incoming_sequence`, not
 /// the anchor's own sequence number, is what makes that lookup land on this
 /// synthetic frame's clientdata instead of an empty/stale ring-buffer slot.
+///
+/// `sequence_backdate` moves `outgoing_sequence` and `incoming_acknowledged`
+/// *back* by that many units from the anchor's own values (preserving the
+/// anchor's real round-trip gap between them). This is load-bearing when more
+/// than one synthetic frame is spliced in (see `client_data_chain`): cloning
+/// the anchor's `SequenceInfo` verbatim for every frame in the burst gives
+/// them all the *same* `outgoing_sequence`. The transcoder writes that value
+/// into each frame's paired `dem_usercmd` as both sequence and cmdnumber
+/// (`xash3d-fwgs/engine/client/cl_demo.c`'s `CL_ReadDemoUserCmd`), which the
+/// client uses to index `cl.commands[(outgoing_sequence + 1) & CL_UPDATE_
+/// MASK]` for movement prediction (`cl_pmove.c`'s `CL_PredictMovement` walks
+/// forward while `incoming_acknowledged + i < outgoing_sequence + stoppoint`)
+/// — several identical `outgoing_sequence` values in a row collide into one
+/// ring-buffer slot and freeze that walk's target for the whole burst, which
+/// reads as a floating/rotating camera until the real stream's genuinely
+/// advancing sequence numbers resume. A real few-packet round trip always has
+/// strictly increasing sequence numbers frame to frame; backdating each
+/// synthetic frame by its distance from the anchor reproduces that shape
+/// instead of repeating one snapshot. Pass `1` for a lone from-null frame (no
+/// burst) so it lands immediately behind the anchor rather than on top of it.
 fn synthetic_baseline_frame(
     anchor: &Frame,
     payload: Vec<u8>,
     client_data_sequence: Option<u8>,
+    sequence_backdate: i32,
 ) -> Frame {
     let FrameData::NetworkMessage(boxed) = &anchor.frame_data else {
         unreachable!("caller only passes NetworkMessage frames as anchor");
@@ -744,6 +777,8 @@ fn synthetic_baseline_frame(
     let (_, anchor_msg) = boxed.as_ref();
 
     let mut sequence_info = anchor_msg.sequence_info.clone();
+    sequence_info.outgoing_sequence -= sequence_backdate;
+    sequence_info.incoming_acknowledged -= sequence_backdate;
     if let Some(seq) = client_data_sequence {
         sequence_info.incoming_sequence = seq as i32;
     }

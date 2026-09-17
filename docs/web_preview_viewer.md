@@ -3,25 +3,23 @@
 **Status:** Working end-to-end for section-start clips (confirmed in a real
 browser: map, players, weapons, correctly turning camera). Mid-stream cuts
 — the actual real-world use case, since highlights are never section-start
-— are **blocked on a newly-discovered, deeper problem than previously
-understood.** Entity state reconstructs correctly (confirmed — no more
+— have a **new fix, byte-verified but not yet retested in a real browser.**
+Entity state reconstructs correctly (confirmed — no more
 `CL_ParseDeltaPacketEntitiesGS`, kill feed works). The local-player
-(`svc_clientdata`) ring-buffer desync that was believed to be the sole
-remaining cause of the floating/rotating camera has been **fixed and
-byte-level verified correct** (see "Step 5 findings") — and the symptom
-**persists anyway, unchanged.** The leading theory going into the next
-session: injecting *any* synthetic full baseline frame mid-game (full
-`svc_packetentities` + `svc_clientdata`, something that structurally never
-happens in a real recording — see Step 4) may itself be read by the client
-DLL as "you just (re)connected," independent of whether its content and
-sequence numbers are correct. Evidence: a server MOTD box reappears
-mid-playback exactly when — and only when — a clip has synthetic frames
-spliced in; the section-start clip (which needs none) never shows it. Not
-yet confirmed against client-DLL source. See "STOP AND READ" point 3 and
-"Step 5 findings" for the full trail.
-**Last updated:** 2026-08-14 (mid-session handoff, cut short by user request
-to stop and write up findings rather than continue guessing — this doc is
-written to let a fresh chat pick up cold, see below).
+(`svc_clientdata`) ring-buffer desync believed (as of Step 5) to be the sole
+remaining cause of the floating/rotating camera was fixed and byte-verified
+correct there, but the symptom persisted anyway. **Step 6 (2026-09-17)
+refutes Step 5's leading theory** (client-DLL reconnect detection — checked
+against real `hlsdk-portable` source, no such code path exists) **and finds
+the actual bug**: a second, unrelated ring buffer (`cl.commands[]`, used for
+movement prediction) was also colliding, because synthetic frames cloned the
+anchor's `outgoing_sequence` verbatim instead of backdating it per frame.
+Fixed and byte-verified against real output. **Needs a real-browser retest
+before this status line can say "fixed"** — see "Step 6 findings" for what
+to check if the camera is still broken after this.
+**Last updated:** 2026-09-17 (Step 6, a fresh session picking this up cold
+per this doc's own instructions — no demo/asset files or browser available,
+so the fix is source- and byte-verified only; previous handoff was 2026-08-14).
 **Spans two repos:** `dod-tools/xash-transcode/` (this repo) and `../dod-web-demo-viewer/` (sibling).
 
 ---
@@ -976,11 +974,99 @@ exact server-restart command, test URL, and what's being waited on.
 
 ---
 
+## Step 6 findings: the MOTD/reconnect theory is refuted; the real bug was
+## in the synthetic frames' `SequenceInfo`, not the client DLL (2026-09-17)
+
+Continuation from a cold read of this doc (a fresh session, different repo —
+picked this up via the KTP coordination effort, which hit the same `dem`
+crate and demo-transcoding problem space from a different angle and found
+this work while researching overlap). Two source-grounded findings, neither
+requiring the actual demo/asset files — both read directly from `hlsdk-
+portable` and `xash3d-fwgs` and then confirmed against this crate's own
+code and real output bytes.
+
+### The client-DLL-reconnect theory (Step 5's leading theory) is dead
+
+Read `hlsdk-portable/cl_dll/MOTD.cpp` and `hud.cpp`. `CHudMOTD::m_bShow` —
+the flag `Draw()` actually checks before rendering the MOTD box — is set
+**only** inside `__MsgFunc_MOTD` (`hud.cpp:208-222`), the handler for the
+dedicated `MOTD` server usermessage. There is no code path anywhere in the
+client DLL that ties MOTD display to `svc_clientdata`, `svc_packetentities`,
+or any notion of "just reconnected." Whatever caused the MOTD to reappear on
+`dodEmmanuelClip`, it was not the client DLL reading a synthetic full
+baseline as a reconnect signal. (Not chased further: most likely the demo's
+own original recording had the server rebroadcast its MOTD a second time
+within the retained window — plenty of pub servers do this periodically —
+which would show up in the real, unmodified `svc_usermsg` stream regardless
+of any synthetic frames; correlate against a demo with zero synthetic frames
+*and* a cut window that doesn't happen to span a second broadcast, or just
+grep the source recording for a second `MOTD` usermessage, to confirm.)
+
+### The actual bug: `synthetic_baseline_frame()` cloned the anchor's entire `SequenceInfo`
+
+`client_data_sequence` (Step 5) correctly overrides `incoming_sequence` per
+synthetic frame — that fix is real and was correctly verified. But every
+other `SequenceInfo` field, **including `outgoing_sequence`**, was cloned
+verbatim from the anchor for *every* frame in the burst. That field isn't
+cosmetic:
+
+- The transcoder writes `outgoing_sequence` into each `NetworkMessage`'s
+  paired synthesized `dem_usercmd` frame, as *both* the sequence and
+  cmdnumber fields (`lib.rs`, the `dem_usercmd`-emission block in the main
+  transcode loop).
+- `CL_ReadDemoUserCmd` (`xash3d-fwgs/engine/client/cl_demo.c:621,648`) uses
+  that value to index `cl.commands[(outgoing_sequence + 1) &
+  CL_UPDATE_MASK]` and pins `cls.netchan.outgoing_sequence` to it.
+- `CL_PredictMovement` (`cl_pmove.c:1036`) predicts the local player forward
+  while `incoming_acknowledged + i < outgoing_sequence + stoppoint`.
+
+Several synthetic frames sharing one `outgoing_sequence` means several
+`dem_usercmd` writes collide into a single `cl.commands[]` slot instead of
+distinct ones, and `outgoing_sequence` itself is frozen for the whole burst
+— exactly the kind of thing that doesn't happen in a real recording (every
+real packet has a strictly increasing sequence number), and structurally
+identical to the bug Step 5 already found and fixed in the *clientdata* ring
+buffer, just one layer over in the *prediction* ring buffer, which nobody
+had looked at yet.
+
+**The fix:** `synthetic_baseline_frame()` gained a `sequence_backdate: i32`
+parameter. Each frame in the burst now gets `outgoing_sequence` and
+`incoming_acknowledged` moved back by its distance from the anchor (the
+frame furthest from real time gets the largest backdate, the one right
+before the anchor gets `1`), instead of all of them cloning the anchor's
+single snapshot. `incoming_sequence` keeps being overridden separately by
+`client_data_sequence`, unchanged from Step 5.
+
+**Verified against real output bytes** (`primer.dem`, a 300–320s cut, same
+methodology Step 5 used — not just reasoning about the source): a new
+throwaway diagnostic, `examples/verify_usercmd_seq.rs`, walks the written
+IDEM file's `dem_usercmd` frames and prints `outgoing_sequence`/`cmdnumber`
+next to the following `NetworkMessage`'s `incoming_sequence`. Before this
+fix, the leading synthetic frames' `outgoing_sequence` was identical
+(cloned from the anchor). After: `310913, 310914, 310915` — three distinct,
+consecutive values, the last one landing exactly on the real anchor frame's
+own real `outgoing_sequence`. `cargo build --release` and `cargo test
+--release` both pass clean (all 7 existing tests, unaffected — none of them
+exercised this path). `validate()` still passes on the regenerated cut.
+
+**Not yet re-tested in a real browser** — this session had no access to the
+real demo/asset files or a running Xash environment, only the source repos
+and `primer.dem` (already checked into this repo). Whoever picks this up
+next with a real browser: retest `dodEmmanuelClip` (or any mid-stream cut)
+end to end. If the camera is fixed, Open Risk #3 is fully closed. If it
+isn't, the MOTD refutation above still stands — don't go back to the
+client-DLL theory — and the next thing to check is probably
+`cl.predicted_frames[]`'s own seeding (`CL_PredictMovement`, `from =
+&cl.predicted_frames[last_predicted]` in `cl_parse.c`), which this session
+didn't get to.
+
+---
+
 ## Open risks
 
 1. ~~**`PROTO_GOLDSRC` may never have been exercised for demo playback.**~~ **Resolved 2026-08-14 — it works.** Confirmed in a real browser: the engine signs onto a transcoded demo's server data, loads the real map and all player/weapon models, and renders the level. See "Step 3 findings" #12.
 2. **No DoD client library exists for wasm.** Valve never released DoD's source, so it can't be compiled — it would have to be written. See below.
-3. **Delta compression on cuts — entity half fixed and confirmed; clientdata half's known bug is fixed and byte-verified correct, but the visible symptom is unchanged, and the actual root cause is now believed to be different from what was fixed.** `svc_deltapacketentities`/`svc_clientdata` encode cumulatively against earlier frames, so a cut landing mid-stream shows corrupt state until reconstructed. **Entity half fixed and confirmed 2026-08-14**: `cut()` synthesizes a full `svc_packetentities` baseline by replaying every entity delta from t=0 to the cut point (see "Step 4 findings") — real-browser test shows no more `CL_ParseDeltaPacketEntitiesGS`, kill feed works, players render and move. **Local-player half (`svc_clientdata`):** the ring-buffer sequence-number bug Step 4 root-caused is now fixed (`client_data_chain()`, "Step 5 findings") — not one synthetic frame but a *burst* of them, since the real reference is a sliding few-frame lag, not a fixed point — and independently byte-verified correct against the actual written output file. **The camera symptom persists anyway, unchanged**, and a new clue (a server MOTD reappearing mid-playback, exactly correlated with which clip has synthetic frames spliced in — see Step 5) points at a different, deeper cause: a full baseline injected mid-game may be read by the *client DLL* as a reconnect event, independent of its content being correct. Not yet confirmed against `hlsdk-portable` source — see "STOP AND READ" point 3 for the concrete next step. **All code (entity fix + clientdata chain fix) is uncommitted** in `xash-transcode/src/lib.rs` and `main.rs` as of this handoff.
+3. **Delta compression on cuts — entity half fixed and confirmed; clientdata half's known bug is fixed and byte-verified correct, but the visible symptom is unchanged, and the actual root cause is now believed to be different from what was fixed.** `svc_deltapacketentities`/`svc_clientdata` encode cumulatively against earlier frames, so a cut landing mid-stream shows corrupt state until reconstructed. **Entity half fixed and confirmed 2026-08-14**: `cut()` synthesizes a full `svc_packetentities` baseline by replaying every entity delta from t=0 to the cut point (see "Step 4 findings") — real-browser test shows no more `CL_ParseDeltaPacketEntitiesGS`, kill feed works, players render and move. **Local-player half (`svc_clientdata`):** the ring-buffer sequence-number bug Step 4 root-caused is now fixed (`client_data_chain()`, "Step 5 findings") — not one synthetic frame but a *burst* of them, since the real reference is a sliding few-frame lag, not a fixed point — and independently byte-verified correct against the actual written output file. **Update 2026-09-17 (Step 6): the client-DLL-reconnect theory is refuted** (confirmed against real `hlsdk-portable` source — MOTD display has no code path connected to clientdata/packetentities). **The real bug was a third ring buffer nobody had looked at**: `synthetic_baseline_frame()` cloned the anchor's `outgoing_sequence` for every frame in the burst, which the engine uses to index its movement-prediction ring buffer (`cl.commands[]`) — several identical values collide into one slot and freeze prediction for the whole synthetic window. Fixed (each frame now gets a distinct, backdated `outgoing_sequence`) and byte-verified against real output (see "Step 6 findings"). **Not yet retested in a real browser** — no demo/asset files or Xash environment available this session.
 4. **Custom content mismatch.** DoD's custom-model culture means demos reference files a given install may lack or have different versions of. `pack` reports size mismatches against server-declared sizes to surface this.
 
 ---
