@@ -82,8 +82,18 @@ pub fn take_key(take_folder: &Path) -> Option<String> {
 /// folder, and the log still appears next to `hl.exe` with nothing in HLAE's
 /// folder. So deriving the path from the game path is always right.
 #[cfg(not(target_arch = "wasm32"))]
+pub fn console_log_path(game_root: &Path) -> PathBuf {
+    game_root.join("qconsole.log")
+}
+
+/// Best-effort removal of the console log, for callers outside a capture
+/// batch. `clear_capture_scratch` does not go through this -- it needs the
+/// retry-and-report treatment every other scratch file there gets -- but both
+/// resolve the path through [`console_log_path`], so neither can drift from
+/// the other on *where* the log lives.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn remove_console_log(game_root: &Path) {
-    let _ = std::fs::remove_file(game_root.join("qconsole.log"));
+    let _ = std::fs::remove_file(console_log_path(game_root));
 }
 
 /// Every scratch file a capture batch leaves in the game folder, cleared
@@ -91,8 +101,10 @@ pub fn remove_console_log(game_root: &Path) {
 ///
 /// `game_root` is the folder holding `hl.exe`; the batch writes into it and
 /// into its `dod/` subfolder. Nothing here is fatal — a capture that finished
-/// should not fail because a leftover could not be deleted — so most removals
-/// are best-effort, with two deliberate exceptions noted inline.
+/// should not fail because a leftover could not be deleted — but nothing here
+/// is silent either: every removal goes through `remove_scratch_file`, which
+/// retries and then reports a file it could not delete against the checkbox
+/// that asked for it. See #218.
 ///
 /// This is one function because it used to be two verbatim copies, in
 /// `CaptureCleanupGuard::drop` (capture_engine.rs) and `WorkspaceGuard::drop`
@@ -114,15 +126,19 @@ pub fn clear_capture_scratch(
     let dod_dir = game_root.join("dod");
 
     if auto_clear_logs {
-        remove_console_log(game_root);
-        let _ = std::fs::remove_file(dod_dir.join("dodtools_helper.cfg"));
-        let _ = std::fs::remove_file(dod_dir.join("dodtools_capture_done.cfg"));
-        let _ = std::fs::remove_file(dod_dir.join("dod_quit.cfg"));
+        remove_scratch_file(&console_log_path(game_root), "Auto-clear Logs");
+        remove_scratch_file(&dod_dir.join("dodtools_helper.cfg"), "Auto-clear Logs");
+        remove_scratch_file(&dod_dir.join("dodtools_capture_done.cfg"), "Auto-clear Logs");
+        remove_scratch_file(&dod_dir.join("dod_quit.cfg"), "Auto-clear Logs");
+        // Legacy only: nothing has written a per-chain cfg since the helper cfg
+        // absorbed those aliases. Kept so a user upgrading from a build that
+        // did write them still gets them cleared, not because anything current
+        // produces one.
         if let Ok(entries) = std::fs::read_dir(&dod_dir) {
             for entry in entries.flatten() {
                 let filename = entry.file_name().to_string_lossy().to_string();
                 if filename.starts_with("dodtools_chain_") && filename.ends_with(".cfg") {
-                    let _ = std::fs::remove_file(entry.path());
+                    remove_scratch_file(&entry.path(), "Auto-clear Logs");
                 }
             }
         }
@@ -143,12 +159,9 @@ pub fn clear_capture_scratch(
         if let Ok(entries) = std::fs::read_dir(&dod_dir) {
             for entry in entries.flatten() {
                 let filename = entry.file_name().to_string_lossy().to_string();
-                if is_chain_demo_filename(&filename)
-                    && let Some(e) = remove_file_retrying(&entry.path()) {
-                        crate::log_markdown(&format!(
-                            "⚠️ **Cleanup** — could not remove {filename} after retrying: {e} (auto_clear_temp_demos left it behind; hl.exe may still have had it open)"
-                        ));
-                    }
+                if is_chain_demo_filename(&filename) {
+                    remove_scratch_file(&entry.path(), "Auto-clear Temp Demos");
+                }
             }
         }
     }
@@ -173,11 +186,51 @@ pub fn clear_capture_scratch(
                     continue;
                 }
                 let sidecar = path.with_extension("dodtools_preview");
-                if sidecar.exists() {
-                    let _ = std::fs::remove_file(&path);
-                    let _ = std::fs::remove_file(sidecar);
+                if !sidecar.exists() {
+                    continue;
+                }
+                // Order matters, and the sidecar goes second on purpose. The
+                // sidecar is the *only* thing marking this demo as ours; drop
+                // it while the demo itself is still on disk and the demo can
+                // never be recognised for cleanup again, so it would sit in
+                // the game folder forever. Removing it only once the demo is
+                // actually gone means a failure here is retried next batch
+                // instead of becoming permanent.
+                if remove_scratch_file(&path, "Auto-clear Previews") {
+                    remove_scratch_file(&sidecar, "Auto-clear Previews");
                 }
             }
+        }
+    }
+}
+
+/// Removes one scratch file, retrying, and says so in the app log if it still
+/// could not be removed. Returns whether the file is gone.
+///
+/// Every removal here used to be a bare `let _ = std::fs::remove_file(..)`,
+/// which is doubly silent: the result is discarded, and the `log::warn!` the
+/// surrounding code reached for has no registered backend in this app. #198
+/// fixed that for the temp demos only. The same silence applies to every other
+/// file cleared here for a reason that has nothing to do with hl.exe -- a
+/// `qconsole.log` the user has open in a text editor to read is the obvious
+/// one -- and the symptom is identical: the checkbox is on, the file is still
+/// there, and nothing anywhere says why.
+///
+/// `setting` names the auto-clear checkbox that asked for this, so the log line
+/// points at the control the user would go looking for.
+#[cfg(not(target_arch = "wasm32"))]
+fn remove_scratch_file(path: &Path, setting: &str) -> bool {
+    match remove_file_retrying(path) {
+        None => true,
+        Some(e) => {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.to_string_lossy().into_owned());
+            crate::log_markdown(&format!(
+                "⚠️ **Cleanup** — could not remove {name} after retrying: {e} ({setting} left it behind; something may still have had it open)"
+            ));
+            false
         }
     }
 }
@@ -316,13 +369,28 @@ mod tests {
 /// `taskkill /F` returning does not mean hl.exe's open file handles are
 /// released yet, and even confirming the process itself has left the process
 /// list (`sysinfo`) does not guarantee it either -- kernel object cleanup can
-/// lag a beat past both. Both cleanup guards (`CaptureCleanupGuard` in
-/// `capture_engine.rs`, `WorkspaceGuard` in `patch/builder.rs`) call this for
-/// the demo files hl.exe just had open (`dodtools_primer.dem`,
-/// `dodtools_chain_NN.dem`) rather
-/// than the single unretried `let _ = std::fs::remove_file(..)` every other
-/// file they clean up gets, because those other files were never mid-close
-/// the way a demo hl.exe was just playing can be. See #198.
+/// lag a beat past both. The demo files hl.exe was just playing
+/// (`dodtools_primer.dem`, `dodtools_chain_NN.dem`) are what this exists for,
+/// and both cleanup guards (`CaptureCleanupGuard` in `capture_engine.rs`,
+/// `WorkspaceGuard` in `patch/builder.rs`) call it for them. See #198.
+///
+/// #218 asked whether the sibling auto-clear settings share that race. They do
+/// not, and the answer is worth recording because it is not guessable from the
+/// Rust side:
+///
+/// * `qconsole.log` is **not** held open across a session. `Con_DebugLog` in
+///   `hw.dll` does `_open(O_WRONLY|O_CREAT|O_APPEND)` / `_write` / `_close`
+///   once per console line, so outside the microseconds of a single line
+///   there is no handle to wait on at all.
+/// * The `.cfg` files are read whole and released; nothing keeps them open.
+/// * `_preview.dem` files belong to a separate preview session, not to the
+///   capture batch whose guard runs this.
+///
+/// Every scratch file goes through this anyway -- `remove_scratch_file` is a
+/// thin reporting wrapper over it. When the file is not locked, which per the
+/// above is the overwhelmingly common case, the first attempt succeeds and it
+/// costs nothing, and it means one uniform path instead of a fast one and a
+/// careful one that can drift apart.
 ///
 /// Returns the last error seen, or `None` on success or if the file was
 /// already gone -- callers decide how loudly to report a real failure; this
@@ -344,6 +412,86 @@ pub fn remove_file_retrying(path: &Path) -> Option<std::io::Error> {
         }
     }
     last_err
+}
+
+#[cfg(test)]
+mod auto_clear_previews_tests {
+    use super::*;
+
+    fn make_preview(dir: &Path, stem: &str) -> (PathBuf, PathBuf) {
+        let demo = dir.join(format!("{stem}_preview.dem"));
+        let sidecar = demo.with_extension("dodtools_preview");
+        std::fs::write(&demo, b"demo").unwrap();
+        std::fs::write(&sidecar, b"").unwrap();
+        (demo, sidecar)
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let root = std::env::temp_dir().join(format!("dod_acp_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("dod")).unwrap();
+        root
+    }
+
+    #[test]
+    fn a_preview_with_its_sidecar_is_removed() {
+        let root = scratch("pair");
+        let (demo, sidecar) = make_preview(&root.join("dod"), "match1");
+
+        clear_capture_scratch(&root, false, false, true, false);
+
+        assert!(!demo.exists(), "the preview demo should be gone");
+        assert!(!sidecar.exists(), "its sidecar should be gone with it");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_user_named_preview_without_a_sidecar_is_left_alone() {
+        let root = scratch("nosidecar");
+        let demo = root.join("dod").join("my_own_preview.dem");
+        std::fs::write(&demo, b"demo").unwrap();
+
+        clear_capture_scratch(&root, false, false, true, false);
+
+        assert!(demo.exists(), "a demo the user named this way is not ours to delete");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The sidecar is the only thing marking a `_preview.dem` as ours. If it is
+    /// removed while the demo itself could not be, the demo stops being
+    /// recognisable and sits in the game folder permanently -- cleanup can
+    /// never pick it up again on any later batch. So a failed demo removal must
+    /// leave the sidecar in place.
+    ///
+    /// Windows only, for the same reason `remove_file_retrying`'s own
+    /// lock test is: `File::open`'s default share mode includes
+    /// FILE_SHARE_DELETE, so a plain open would not block the delete and this
+    /// would pass without testing anything.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn a_sidecar_outlives_a_demo_that_could_not_be_removed() {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        let root = scratch("orphan");
+        let (demo, sidecar) = make_preview(&root.join("dod"), "locked");
+
+        let handle = std::fs::OpenOptions::new().read(true).share_mode(1).open(&demo).unwrap();
+        assert!(
+            std::fs::remove_file(&demo).is_err(),
+            "the fixture itself is wrong if a plain remove_file succeeds here"
+        );
+
+        clear_capture_scratch(&root, false, false, true, false);
+
+        assert!(demo.exists(), "the locked demo could not have been removed");
+        assert!(
+            sidecar.exists(),
+            "the sidecar must survive, or this demo can never be cleaned up again"
+        );
+
+        drop(handle);
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
 
 #[cfg(test)]
