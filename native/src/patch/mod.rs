@@ -11,6 +11,46 @@
 //   Step 4 (pending): builder.rs        ← build_batch_queue, spawn_patch_batch
 //   Step 5 (pending): scanner.rs        ← scan_demo_for_highlights, is_hltv_demo
 
+/// Cancellation as the decal-flush pipeline sees it.
+///
+/// A capture batch owns an `Arc<AtomicBool>` and passes it in; the offline
+/// probes in `native/examples`, the `strip_decals` binary and the unit tests
+/// run the same code with nothing to cancel them, and pass [`Cancel::never`].
+/// Wrapping the difference here keeps every check site a plain
+/// `if cancel.requested()` instead of an `Option` dance repeated a dozen times.
+#[derive(Clone, Copy)]
+pub struct Cancel<'a>(Option<&'a std::sync::Arc<std::sync::atomic::AtomicBool>>);
+
+impl<'a> Cancel<'a> {
+    pub fn new(token: &'a std::sync::Arc<std::sync::atomic::AtomicBool>) -> Self {
+        Self(Some(token))
+    }
+
+    /// A check that never fires, for callers outside a cancellable batch.
+    pub const fn never() -> Self {
+        Self(None)
+    }
+
+    #[inline]
+    pub fn requested(&self) -> bool {
+        self.0
+            .is_some_and(|t| t.load(std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
+/// Returned by the decal-flush pipeline when it gave up because the batch was
+/// cancelled. Deliberately not a `String` error: cancellation is not a failure
+/// and must not be reported to the user as one, nor fall back to the
+/// unflushed demo and carry on patching the way a real flush failure does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cancelled;
+
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("cancelled by user")
+    }
+}
+
 // Engine & Memory Limits
 pub const MAX_CONSOLE_CMD_LEN: usize = 64;
 pub const MAX_CONSOLE_CMD_SAFE_LEN: usize = 63;
@@ -119,7 +159,8 @@ pub use decal_strip::{
     DEFAULT_LEAD_SECONDS,
     proven_world_coordinates, ring_limit, ring_limit_from_init, ring_limit_from_game_config,
     strip_decals_outside_windows,
-    CleanedSource, DecalCleanOptions, DecalCleanStats, FlushSource, VisibilityBasis,
+    CleanedSource, DecalCleanError, DecalCleanOptions, DecalCleanStats, FlushSource,
+    VisibilityBasis,
     DECALS_PER_POSITION, MAX_OVERLAP_DECALS,
 };
 

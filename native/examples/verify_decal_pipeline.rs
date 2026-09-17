@@ -17,7 +17,7 @@
 
 use native::patch::scanner::scan_demo_for_highlights;
 use native::patch::types::PatcherConfig;
-use native::patch::{build_batch_queue, prepare_flushed_source, StreamPatcher};
+use native::patch::{build_batch_queue, prepare_flushed_source, Cancel, StreamPatcher};
 
 fn frame_count(path: &std::path::Path) -> Option<usize> {
     let bytes = std::fs::read(path).ok()?;
@@ -96,7 +96,9 @@ fn main() {
                 .unwrap_or_else(|| "<none>".to_string());
 
             let started = std::time::Instant::now();
-            match prepare_flushed_source(job, &config) {
+            match prepare_flushed_source(job, &config, Cancel::never())
+                .expect("nothing cancels an offline verify run")
+            {
                 Some(cleaned) => {
                     let n = frame_count(cleaned.path()).expect("cleaned parses");
                     let ok = n == source_frames;

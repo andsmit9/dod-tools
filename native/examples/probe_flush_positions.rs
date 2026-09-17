@@ -13,7 +13,7 @@ use native::patch::bsp::Bsp;
 use native::patch::scanner::scan_demo_for_highlights;
 use native::patch::types::PatcherConfig;
 use native::patch::{
-    build_batch_queue, clean_demo_decals, on_screen_half_angle, DecalCleanOptions,
+    build_batch_queue, clean_demo_decals, on_screen_half_angle, Cancel, DecalCleanOptions,
 };
 
 fn main() {
@@ -78,7 +78,7 @@ using job for player {:?}", job.target_player);
     };
 
     let bytes = std::fs::read(&demo).expect("read demo");
-    let (_out, stats) = clean_demo_decals(&bytes, &windows, &opts).expect("clean");
+    let (_out, stats) = clean_demo_decals(&bytes, &windows, &opts, Cancel::never()).expect("clean");
 
     let positions = &stats.diagnostic_positions;
     let cameras = &stats.diagnostic_cameras;

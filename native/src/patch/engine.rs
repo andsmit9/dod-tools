@@ -138,8 +138,18 @@ impl StreamPatcher {
         // then reads from. Held for the whole patch: the scratch demo is
         // deleted when this drops, including on the cancellation path.
         // Falls back to the original demo (having logged why) rather than
-        // failing the batch — see `prepare_flushed_source`.
-        let cleaned_source = crate::patch::decal_strip::prepare_flushed_source(job, config);
+        // failing the batch — see `prepare_flushed_source`. Cancellation is
+        // the one thing it does not fall back from: the pass is checked at
+        // every stage boundary and from inside the demo serialise, so a
+        // Cancel press no longer waits out a whole flush. See #193.
+        let cleaned_source = crate::patch::decal_strip::prepare_flushed_source(
+            job,
+            config,
+            crate::patch::Cancel::new(cancel_token),
+        )
+        .map_err(|_| {
+            std::io::Error::new(std::io::ErrorKind::Interrupted, "Cancelled by user")
+        })?;
         let source_demo: &std::path::Path = match &cleaned_source {
             Some(c) => c.path(),
             None => std::path::Path::new(&job.source_demo),

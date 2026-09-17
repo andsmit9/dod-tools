@@ -5,7 +5,7 @@
 //! into the real capture batch pipeline.
 
 use clap::Parser;
-use native::patch::{clean_demo_decals, DecalCleanOptions, FlushSource, MAX_OVERLAP_DECALS};
+use native::patch::{clean_demo_decals, Cancel, DecalCleanOptions, FlushSource, MAX_OVERLAP_DECALS};
 use std::fs;
 use std::path::PathBuf;
 
@@ -118,7 +118,7 @@ fn main() {
         ..Default::default()
     };
 
-    match clean_demo_decals(&bytes, &args.keep_windows, &opts) {
+    match clean_demo_decals(&bytes, &args.keep_windows, &opts, Cancel::never()) {
         Ok((out_bytes, stats)) => {
             if let Err(e) = fs::write(&args.out, &out_bytes) {
                 eprintln!("Error writing output demo: {}", e);
