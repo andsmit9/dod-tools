@@ -470,6 +470,70 @@ pub fn poll() {
     }
 }
 
+/// Field offsets inside a `DeathNoticeItem` that [`restamp_display_time`] needs.
+const FIELD_ID: usize = 0x80;
+const FIELD_DISPLAY_TIME: usize = 0x90;
+
+const _: () = assert!(
+    FIELD_DISPLAY_TIME + size_of::<f32>() <= ITEM,
+    "flDisplayTime runs past the end of a DeathNoticeItem"
+);
+
+/// Where the live array is right now: the relocated buffer once `max` has
+/// grown it, otherwise `client.dll`'s own.
+fn current_array(base: usize) -> (usize, i32) {
+    let max = PATCHED_MAX.load(Ordering::Acquire);
+    if max == 0 { (base + ARRAY_RVA, STOCK_MAX) } else { (buffer(), max) }
+}
+
+/// Re-dates the notice `fake` just added, so it lives from *now*.
+///
+/// `MsgFunc_DeathMsg` stamps `flDisplayTime` as `gHUD.m_flTime +
+/// (int)hud_deathnotice_time`, and `Draw` drops any entry whose stamp is older
+/// than the frame time it is handed:
+///
+/// ```asm
+/// +0x2b3be  fild dword ptr [0x19c33d8]      ; (int)hud_deathnotice_time
+/// +0x2b3c4  fadd dword ptr [0x1a080cc]      ; + gHUD.m_flTime
+/// +0x2b3cc  fstp dword ptr [esi + 0x1a76668]  ; -> flDisplayTime
+///
+/// +0x2af4e  fld  dword ptr [edi + 0x1a76668]
+/// +0x2af54  fcomp dword ptr [esp + 0x5c]    ; vs Draw's flTime argument
+/// +0x2af5d  jp   ...                        ; else memmove the entry away
+/// ```
+///
+/// `m_flTime` is only refreshed by `CHud::Redraw`, which does not run while the
+/// console is down — the same reason DoD's `cl_lw` suicide does not fire until
+/// the console closes. So a notice typed at the console is stamped with
+/// whatever time the HUD last saw, and the first `Draw` after the console
+/// closes compares that stale stamp against a live clock and deletes it before
+/// it is ever drawn. Typing several and closing the console showed nothing at
+/// all; closing, reopening and typing one showed it, because that brief close
+/// let `Redraw` catch `m_flTime` up.
+///
+/// A real notice never hits this: it arrives while the game is drawing. So the
+/// fix belongs here rather than in the hook.
+fn restamp_display_time(base: usize) {
+    let Some(engfuncs) = engine::engfuncs() else { return };
+    let Ok(cvar) = CString::new("hud_deathnotice_time") else { return };
+    // Truncated, because that is what the game does to it.
+    let lifetime = unsafe { (engfuncs.pfn_get_cvar_float)(cvar.as_ptr()) }.trunc();
+    let expires = engine::client_time() as f32 + lifetime;
+
+    // MsgFunc fills the first slot whose iId is 0, so the notice it just added
+    // is the last occupied one.
+    let (array, slots) = current_array(base);
+    for slot in (0..slots as usize).rev() {
+        let item = array + slot * ITEM;
+        // Safety: `array` is either the leaked buffer or client.dll's own
+        // `.data`, and `slot` is inside the count the code was patched for.
+        if unsafe { std::ptr::read_unaligned((item + FIELD_ID) as *const i32) } != 0 {
+            unsafe { std::ptr::write_unaligned((item + FIELD_DISPLAY_TIME) as *mut f32, expires) };
+            return;
+        }
+    }
+}
+
 /// Feeds the game a death notice that never happened.
 fn fake(killer: i32, victim: i32, weapon: i32) -> Result<(), String> {
     let Some(original) = original_thunk() else {
@@ -523,6 +587,9 @@ fn fake(killer: i32, victim: i32, weapon: i32) -> Result<(), String> {
     };
     unsafe { original(name.as_ptr(), payload.len() as i32, payload.as_mut_ptr() as *mut c_void) };
     unsafe { crate::debug::report("deathmsg: fake -- returned cleanly") };
+    if let Some(base) = engine::client_module_base() {
+        restamp_display_time(base);
+    }
     Ok(())
 }
 
@@ -712,6 +779,21 @@ pub unsafe extern "C" fn command() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_restamped_fields_are_ones_the_game_itself_indexes() {
+        // FIELD_ID and FIELD_DISPLAY_TIME are written straight into the array,
+        // bypassing the code that normally maintains it, so they have to be the
+        // offsets client.dll actually uses -- not ones taken from the SDK
+        // header and assumed to have survived DoD's build. Every field the game
+        // touches shows up in ARRAY_REFS, which is derived from the binary.
+        for field in [FIELD_ID, FIELD_DISPLAY_TIME] {
+            assert!(
+                ARRAY_REFS.iter().any(|&(_, offset)| offset == field),
+                "client.dll never indexes +{field:#x}; restamping it would write into a field it does not use"
+            );
+        }
+    }
 
     #[test]
     fn a_module_is_verified_once_and_a_reloaded_one_again() {

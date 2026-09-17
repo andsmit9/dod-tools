@@ -288,6 +288,35 @@ the same way. It simply never happens, because kills only arrive during play.
 `fake` now reads that pointer itself and refuses with a message naming the
 cause, rather than letting the game vanish.
 
+### A faked notice has to be re-dated, because the HUD clock stops
+
+`MsgFunc_DeathMsg` stamps `flDisplayTime` as `gHUD.m_flTime +
+(int)hud_deathnotice_time`, and `Draw` deletes any entry whose stamp is older
+than the frame time it is handed:
+
+```asm
++0x2b3be  fild dword ptr [0x19c33d8]        ; (int)hud_deathnotice_time
++0x2b3c4  fadd dword ptr [0x1a080cc]        ; + gHUD.m_flTime
++0x2b3cc  fstp dword ptr [esi + 0x1a76668]  ; -> flDisplayTime
+
++0x2af4e  fld   dword ptr [edi + 0x1a76668]
++0x2af54  fcomp dword ptr [esp + 0x5c]      ; vs Draw's flTime argument
++0x2af5d  jp    ...                         ; else memmove the entry away
+```
+
+`m_flTime` is only refreshed by `CHud::Redraw`, which does not run while the
+console is down — the same reason DoD's `cl_lw` suicide does not fire until the
+console closes. So a notice typed at the console carries whatever time the HUD
+last saw, and the first `Draw` after the console closes compares that stale
+stamp against a live clock and drops it before drawing it once.
+
+Observed exactly that way: several `fake`s then closing the console showed
+nothing; closing, reopening, and typing one showed it, because the brief close
+let `Redraw` catch `m_flTime` up.
+
+A real notice never hits this — it arrives while the game is drawing — so
+`fake` re-dates the slot it just filled from `GetClientTime` instead.
+
 ### Verification runs once per module, not once per command
 
 The pre-flight check asks whether every site still holds the value the analysed

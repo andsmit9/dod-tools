@@ -105,6 +105,10 @@ pub type AddCommandFn = unsafe extern "C" fn(cmd_name: *const c_char, function: 
 /// readable, and `client.dll` does not check.
 pub type GetLocalPlayerFn = unsafe extern "C" fn() -> *mut c_void;
 
+/// `gEngfuncs.pfnGetCvarFloat` (slot 15). Reads a console variable's numeric
+/// value by name, returning 0 for one that does not exist.
+pub type GetCvarFloatFn = unsafe extern "C" fn(name: *const c_char) -> f32;
+
 pub type HookUserMsgFn =
     unsafe extern "C" fn(msg_name: *const c_char, pfn: UserMsgHookFn) -> i32;
 /// `int (*pfnUserMsgHook)(const char *pszName, int iSize, void *pbuf)`.
@@ -403,7 +407,8 @@ pub struct EngineStudioApiPartial {
 pub struct ClEngineFuncsPartial {
     _slots_before_register_variable: [*mut c_void; 14], // pfnSPR_Load .. pfnSetCrosshair
     pub pfn_register_variable: RegisterVariableFn,
-    _slots_before_add_command: [*mut c_void; 2], // pfnGetCvarFloat, pfnGetCvarString
+    pub pfn_get_cvar_float: GetCvarFloatFn,
+    _slots_before_add_command: [*mut c_void; 1], // pfnGetCvarString
     pub pfn_add_command: AddCommandFn,
     pub pfn_hook_user_msg: HookUserMsgFn,
     _slots_before_console_print: [*mut c_void; 11], // pfnServerCmd .. pfnDrawConsoleStringLen
