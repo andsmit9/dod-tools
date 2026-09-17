@@ -52,7 +52,17 @@ impl std::fmt::Display for Cancelled {
 }
 
 // Engine & Memory Limits
+
+/// The width of a Type-3 `ConsoleCommand` frame's `char command[64]` field.
+///
+/// This is a **demo file format** property, not an engine one, so it cannot be
+/// raised: `dem-patch`'s `parse_console_command` reads exactly 64 bytes, and a
+/// longer string would run into the next frame. GoldSrc's own command buffer is
+/// 16,384 bytes (`Cbuf_Init`, `hw.dll+0x272b0`) and imposes nothing here — see
+/// `docs/goldsrc_hw_dll_survey.md` §3.1. A command too long for one frame has to
+/// be staggered across several ticks.
 pub const MAX_CONSOLE_CMD_LEN: usize = 64;
+/// The longest command that still leaves room for the field's NUL terminator.
 pub const MAX_CONSOLE_CMD_SAFE_LEN: usize = 63;
 pub const MAX_DIRECTOR_STUFFTEXT_LEN: usize = 253;
 pub const IO_BUFFER_CAPACITY: usize = 262_144;

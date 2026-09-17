@@ -97,7 +97,7 @@ percentage and a "current clip" label.
 
 **(d) Risk vs. guardrails.** Low. This is purely additive — a new read-only log
 tail and a new event variant — and doesn't touch frame injection, the 64-byte
-Cbuf limit, or `DemoStart`/`ConsoleCommand` ordering at all. The poll loop
+`ConsoleCommand` field, or `DemoStart`/`ConsoleCommand` ordering at all. The poll loop
 already satisfies the non-blocking-with-cancellation-check shape; just make
 sure the log read stays a small bounded read (last few KB), not a full-file
 re-parse each tick, so it doesn't turn the 500ms tick into a slow one.
@@ -468,7 +468,7 @@ correlation this codebase already has — `shared/paths::take_key` — to look t
 label up at render time). Gate it behind a Render Studio checkbox, off by
 default so it doesn't change existing output unexpectedly.
 
-**(d) Risk/complexity.** Medium — no protected frame-format/Cbuf guardrails
+**(d) Risk/complexity.** Medium — no protected frame-format guardrails
 apply (this is pure FFmpeg filter-graph work, post-capture), but correctly
 resolving which take-folder maps to which highlight's label at render time
 (potentially after a restart, with the take index) is real plumbing, and

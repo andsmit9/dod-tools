@@ -1197,8 +1197,9 @@ mod tests {
         assert_eq!(parse_tick("[dod-tools] BATCH_COMPLETE"), None);
     }
 
-    /// The echoes are chunked by `build_safe_echos` when they exceed the Cbuf
-    /// limit, and continuation chunks carry a different prefix. The tick still
+    /// The echoes are chunked by `build_safe_echos` when they exceed what a
+    /// `ConsoleCommand` frame's 64-byte command field holds, and continuation
+    /// chunks carry a different prefix. The tick still
     /// has to come out of the first chunk.
     #[test]
     fn tick_is_parsed_from_a_chunked_echo() {

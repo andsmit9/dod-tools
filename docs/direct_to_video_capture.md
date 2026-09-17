@@ -154,7 +154,7 @@ bytes. Kept as written because the questions are what the probe was designed aro
 **The options string must be set once, at load, from a config file — never as an injected
 `ConsoleCommand` frame.** This is the same rule `r_decals` follows, for two independent reasons:
 
-- GoldSrc's `Cbuf_AddTextToBuffer` limit is 64 bytes per injected command, and an FFmpeg command
+- A demo's `ConsoleCommand` frame holds a fixed 64-byte command field, and an FFmpeg command
   line plus a path is several times that. There is no staggering trick that helps: it is one
   argument to one command.
 - An injected `ConsoleCommand` frame shifts every later frame ordinal by +1 and desyncs the

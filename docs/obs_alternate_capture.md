@@ -320,7 +320,7 @@ BMP streams at 120fps throughout. GoldSrc's debug log does flush per line. See "
 carries the signal" above.
 
 *(A `screenshot`-based marker was the fallback had the log turned out to be buffered — a console
-command with a filesystem side effect, under the 64-byte Cbuf limit, costing one frame rather than a
+command with a filesystem side effect, inside the 64-byte `ConsoleCommand` field, costing one frame rather than a
 `host_framerate` yank. It is not needed and is recorded here only so the option is not re-derived.)*
 
 ### Option A (recommended): drive both ends off the echoes

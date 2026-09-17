@@ -15,7 +15,7 @@ fn write_console_cmd(writer: &mut std::io::BufWriter<std::fs::File>, time: f32, 
     let command_string = cmd;
     if command_string.len() >= crate::patch::MAX_CONSOLE_CMD_LEN {
         let msg = format!(
-            "FATAL: GoldSrc Cbuf Overflow (64-byte limit breached). Command: '{}', Length: {}",
+            "FATAL: Command too long for a ConsoleCommand frame (the demo format's 64-byte command field). Command: '{}', Length: {}",
             command_string,
             command_string.len()
         );
@@ -54,7 +54,8 @@ fn write_director_event_payload(
     use std::io::Write;
     
     // svc_director STUFFTEXT payload_len is a u8; silently clamp to 253 bytes.
-    // (64-byte panic is for ConsoleCommand frames, not for director payloads.)
+    // (The 64-byte panic is the ConsoleCommand frame's field width, not a limit
+    // on director payloads -- those travel inside a NetworkMessage instead.)
     let command = if command.len() > crate::patch::MAX_DIRECTOR_STUFFTEXT_LEN { &command[..crate::patch::MAX_DIRECTOR_STUFFTEXT_LEN] } else { command };
 
     let cmd_bytes = command.as_bytes();

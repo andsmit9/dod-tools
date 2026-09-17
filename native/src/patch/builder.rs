@@ -610,8 +610,9 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
     // names those streams in camelCase.
     //
     // Set here, once, at load — never as an injected ConsoleCommand frame. The
-    // options string is several times GoldSrc's 64-byte Cbuf_AddTextToBuffer
-    // limit with no staggering available (one argument to one command), and an
+    // options string is several times the 64 bytes a ConsoleCommand frame's
+    // command field holds, with no staggering available (one argument to one
+    // command), and an
     // injected frame would shift every later frame ordinal by +1 and desync the
     // scheduled capture commands. Same rule r_decals follows.
     //
@@ -1011,7 +1012,7 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
                 }
                 let cmd_len = custom.command.len();
                 if cmd_len > crate::patch::CUSTOM_CMD_WARN_LIMIT {
-                    crate::log_markdown(&format!("⚠️ **WARNING:** Custom command exceeds 60 bytes and will likely be dropped by the GoldSrc Cbuf: {}", custom.command));
+                    crate::log_markdown(&format!("⚠️ **WARNING:** Custom command exceeds 60 bytes and will not fit in a demo ConsoleCommand frame's 64-byte command field: {}", custom.command));
                 }
 
                 // Playback runs at `host_framerate 0.05` until the pre-roll
@@ -1703,7 +1704,7 @@ mod tests {
     /// too-long name would not fail, it would just stop working. The
     /// `dodtools_` prefix (#197) made all of these 9 bytes longer, so pin it.
     #[test]
-    fn every_injected_command_stays_under_the_goldsrc_cbuf_limit() {
+    fn every_injected_command_fits_a_console_command_frame() {
         let mut config = PatcherConfig::default();
         let temp_game_path = std::env::temp_dir().join("dod_test_cbuf_len");
         std::fs::create_dir_all(temp_game_path.join("dod")).expect("dummy dod dir");
@@ -1743,7 +1744,7 @@ mod tests {
             for (tick, cmd) in &job.scheduled_commands {
                 assert!(
                     cmd.len() < crate::patch::MAX_CONSOLE_CMD_SAFE_LEN,
-                    "scheduled command {cmd:?} at tick {tick} is {} bytes,                      at or over the {} byte Cbuf_AddTextToBuffer budget",
+                    "scheduled command {cmd:?} at tick {tick} is {} bytes, at or over the {}-byte command field a ConsoleCommand frame holds",
                     cmd.len(),
                     crate::patch::MAX_CONSOLE_CMD_SAFE_LEN
                 );
