@@ -474,15 +474,9 @@ fn fake(killer: i32, victim: i32, weapon: i32) -> Result<(), String> {
         return Err("the engine function table is not available yet".to_string());
     };
     let local_player = unsafe { (engfuncs.get_local_player)() } as usize;
-    unsafe {
-        crate::debug::report(&format!(
-            "deathmsg: fake -- GetLocalPlayer() = {local_player:#x} (readable: {})",
-            crate::crash::readable(local_player, 4)
-        ))
-    };
     if !crate::crash::readable(local_player, 4) {
         return Err(format!(
-            "the engine's local player is {local_player:#x}, which cannot be read --              client.dll would dereference it without checking and take the game down.              Try again while a demo is actually playing"
+            "{COMMAND} fake: no level is loaded -- GetLocalPlayer() is {local_player:#x}, which client.dll would dereference without checking and take the game down. Load a demo first.\n"
         ));
     }
     // Straight to client.dll's own handler, deliberately bypassing our hook:

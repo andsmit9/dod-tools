@@ -52,7 +52,11 @@ Produces `target/i686-pc-windows-msvc/release/dodtoolsHookGoldSrc.dll` and
 
 ## Status
 
-Compiles and links cleanly (verified: produces a real 32-bit PE DLL). Not yet
-tested against a running game -- see the module docs in `src/engine.rs`,
-`src/sound_fix.rs`, and `src/anim_fix.rs` for what's confirmed via static
-analysis of the actual DoD 1.3 game files vs. what still needs a live check.
+The animation fix and all four `dodtools_deathmsg` subcommands are live-proven
+against a running game. The sound fix is confirmed by static analysis only --
+see the module docs in `src/engine.rs` and `src/sound_fix.rs` for what is
+established from the DoD 1.3 game files vs. what still needs a live check.
+
+A crash inside the game leaves no dump, WER record or event-log entry, because
+GoldSrc installs its own unhandled-exception filter. `src/crash.rs` logs the
+faulting address as `module+RVA` so a crash is diagnosable from the log alone.

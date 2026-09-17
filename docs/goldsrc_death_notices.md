@@ -1,6 +1,6 @@
 # DoD 1.3 death notices: raising the line count, and the rest of `mirv_deathmsg`
 
-> **Status 2026-09-16 — implemented, not yet live-tested.**
+> **Status 2026-09-16 — implemented and live-tested.**
 > Lives in `goldsrc-hooks/src/deathmsg.rs`, on branch
 > `feat/goldsrc-hooks-companion-dll`. One console command,
 > `dodtools_deathmsg`, with four subcommands.
@@ -236,10 +236,23 @@ python goldsrc-hooks/tools/verify_deathmsg_offsets.py [path-to-client.dll]
 
 ## 5. Live findings, 2026-09-16
 
-**`fake` takes the game down, and where is now known exactly.** The DLL installs
-a vectored exception handler (`goldsrc-hooks/src/crash.rs`) precisely because
-GoldSrc swallows its own unhandled exceptions and exits without a dump, a WER
-record or an event-log entry. It caught this:
+Tested in a real session against an HLTV demo. `max`, `offset`, `block` and
+`fake` all work, and two things worth recording came out of it.
+
+### The `.text` writes stick
+
+`max` and `offset` patch `client.dll`'s own code through `VirtualProtect`, and
+issue #204 had recorded `client.dll` behaving as though hardened, which nothing
+offline could settle. It is settled: `max 8`, `offset 100` and `max 4` all
+applied and reported success in a live session. Nothing refuses the write.
+
+### `fake` needs a level loaded, and the failure is fatal rather than noisy
+
+Run at the main menu, `fake` took the game down. GoldSrc swallows its own
+unhandled exceptions and exits with no dump, no WER record and no event-log
+entry, so the DLL carries a vectored exception handler
+(`goldsrc-hooks/src/crash.rs`) purely to make crashes like this legible. It
+caught:
 
 ```
 CRASH: access violation at client.dll+0x20526 -- reading 0xbb8
@@ -257,22 +270,19 @@ CRASH: access violation at client.dll+0x20526 -- reading 0xbb8
 
 `gViewPort->DeathMsg(killer, victim)` (`+0x802f0`) calls it **unconditionally**,
 to compare the local player's index against the victim's and hide the scoreboard
-on a match. `GetLocalPlayer` returned `0xbb8` — 3000, which is a small multiple
-of `sizeof(cl_entity_t)`, i.e. an index computed off a null entity array — and
-`client.dll` dereferences it without checking.
+on a match. With no level loaded there is no entity array, so the engine returns
+an index computed off a null base — `0xbb8`, a multiple of `sizeof(cl_entity_t)`
+— and `client.dll` dereferences it without checking.
 
-Because that path is unconditional it runs for every *real* death notice too, so
-this is not about the arguments `fake` was given. `fake` now reads the pointer
-itself and refuses with a message rather than letting the game vanish, and logs
-the value either way. What remains open is why the engine hands back a bad
-pointer when the call originates from a console command rather than from the
-message dispatcher.
+Because the path is unconditional this is a property of `client.dll`, not of
+this command: a *real* death notice arriving with no level loaded would crash
+the same way. It simply never happens, because kills only arrive during play.
 
-**Still unproven: that the `.text` writes stick at runtime.** `max` and `offset`
-patch `client.dll`'s own code through `VirtualProtect`, and issue #204 recorded
-`client.dll` behaving as though hardened. The first live run never got far
-enough to answer it — `verify_stock` refused on the operand-address bug above,
-which is exactly what that pre-flight check exists to do.
+`fake` now reads that pointer itself and refuses with a message naming the
+cause, rather than letting the game vanish.
 
-Everything in §§2–3 is derived from the shipped binaries and is independent of
-both questions.
+### A note on reading the log
+
+The `[demo N]` column in the DLL's log is client time since process start, not
+demo playback position. It reads as though a demo is running when none is, which
+is exactly how the crash above was misdiagnosed once before being pinned down.
