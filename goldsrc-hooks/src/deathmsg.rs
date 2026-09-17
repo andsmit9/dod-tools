@@ -572,7 +572,7 @@ fn fake(killer: i32, victim: i32, weapon: i32) -> Result<(), String> {
     let local_player = unsafe { (engfuncs.get_local_player)() } as usize;
     if !crate::crash::readable(local_player, 4) {
         return Err(format!(
-            "{COMMAND} fake: no level is loaded -- GetLocalPlayer() is {local_player:#x}, which client.dll would dereference without checking and take the game down. Load a demo first.\n"
+            "no level is loaded -- GetLocalPlayer() is {local_player:#x}, which client.dll would dereference without checking and take the game down. Load a demo first."
         ));
     }
     // The block list applies here too. The first version deliberately bypassed
@@ -586,27 +586,14 @@ fn fake(killer: i32, victim: i32, weapon: i32) -> Result<(), String> {
     // success and shows nothing is the worst of the three possible behaviours.
     if BLOCK.lock().map(|list| list.blocks(killer, victim)).unwrap_or(false) {
         return Err(format!(
-            "{COMMAND} fake: the block list hides frags involving {killer} -> {victim}, so nothing was shown. `{COMMAND} block clear` stops hiding.\n"
+            "the block list hides frags involving {killer} -> {victim}, so nothing was shown. `{COMMAND} block clear` stops hiding."
         ));
     }
 
     // Straight to client.dll's own handler rather than through our own hook:
     // the hook's only job is the block check, which has already happened here,
     // and the engine is not involved in dispatching it either way.
-    //
-    // Bracketed by log lines because this is the one place the DLL hands
-    // control to game code that was never written to be called from here: if
-    // the game dies inside it, the missing "returned" line is what says so, and
-    // says it even though the process is gone before anything else can report.
-    unsafe {
-        crate::debug::report(&format!(
-            "deathmsg: fake -- calling client.dll __MsgFunc_DeathMsg at {:#x} with killer={killer} victim={victim} weapon={weapon} ({})",
-            original as usize,
-            WEAPON_SPRITES.get(weapon as usize).copied().unwrap_or("?"),
-        ))
-    };
     unsafe { original(name.as_ptr(), payload.len() as i32, payload.as_mut_ptr() as *mut c_void) };
-    unsafe { crate::debug::report("deathmsg: fake -- returned cleanly") };
     if let Some(base) = engine::client_module_base() {
         restamp_display_time(base);
     }
