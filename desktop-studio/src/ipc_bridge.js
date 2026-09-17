@@ -170,8 +170,8 @@ export async function startCaptureBatch(payload) {
  *  (BOOKMARK/director events at each highlight, regardless of selection or
  *  Min Kills — reuses an existing preview instead of regenerating one) and
  *  immediately launches it in HLAE via `+viewdemo`. */
-export async function launchDemoPreview(hlaePath, gamePath, streaks) {
-  return invoke("launch_demo_preview", { hlaePath, gamePath, streaks })
+export async function launchDemoPreview(hlaePath, gamePath, streaks, goldsrcHooksDllPath) {
+  return invoke("launch_demo_preview", { hlaePath, gamePath, streaks, goldsrcHooksDllPath })
     .catch((err) => {
       console.error("IPC Execution Error (launch_demo_preview):", err);
       showToast(STRINGS.IPC.previewFailed(err), 'error');

@@ -56,10 +56,20 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: i686-pc-windows-msvc
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
+
+      # DoD/GoldSrc is a 32-bit engine, so this companion DLL (see
+      # goldsrc-hooks/README.md) needs its own cross-build -- the rest of the
+      # app builds for the host's native 64-bit target. Built before
+      # tauri-action so tauri.conf.json's `bundle.resources` entry for it
+      # already exists on disk when bundling runs.
+      - name: Build goldsrc-hooks (32-bit DoD/GoldSrc companion DLL)
+        run: cargo build -p goldsrc-hooks --release --target i686-pc-windows-msvc
 
       - name: Setup Node
         uses: actions/setup-node@v4

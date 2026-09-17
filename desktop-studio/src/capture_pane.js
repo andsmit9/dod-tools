@@ -1189,6 +1189,7 @@ export function initCaptureUI(getState, onSettingsChange, onStatusChange, getTak
     const hlaePathVal = document.querySelector("#hlae-path-input")?.value?.trim() || "";
     const hlPathVal = document.querySelector("#hl-path-input")?.value?.trim() || "";
     const ffmpegOverridePathVal = document.querySelector("#ffmpeg-override-path-input")?.value?.trim() || null;
+    const goldsrcHooksDllPathVal = document.querySelector("#goldsrc-hooks-dll-path-input")?.value?.trim() || null;
 
     const resWidthVal = parseInt(document.querySelector("#config-res-width")?.value, 10) || 1280;
     const resHeightVal = parseInt(document.querySelector("#config-res-height")?.value, 10) || 720;
@@ -1245,6 +1246,7 @@ export function initCaptureUI(getState, onSettingsChange, onStatusChange, getTak
       hlae_path: hlaePathVal,
       game_path: hlPathVal,
       ffmpeg_override_path: ffmpegOverridePathVal,
+      goldsrc_hooks_dll_path: goldsrcHooksDllPathVal,
       resolution_width: resWidthVal,
       resolution_height: resHeightVal,
       decal_flush: decalFlushVal,

@@ -1344,7 +1344,7 @@ pub fn spawn_patch_batch(
 /// "_preview" — both constraints are enforced here, once, at the point the
 /// output filename is chosen, so neither preview entry point (this one, or
 /// `generate_all_previews`'s later manual load) can hit it again.
-fn playdemo_safe_stem(raw: &str) -> String {
+pub fn playdemo_safe_stem(raw: &str) -> String {
     // Reserve room for the "_preview" suffix appended below, and stay a few
     // characters under the documented ~40 char limit rather than right at it.
     const SUFFIX_LEN: usize = "_preview".len();

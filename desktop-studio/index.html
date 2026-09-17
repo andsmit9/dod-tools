@@ -215,6 +215,12 @@
               </div>
               <div id="ffmpeg-path-warning" class="path-warning" style="display: none;"></div>
               <div class="input-row">
+                <label data-str="CAPTURE_CONFIG.GOLDSRC_HOOKS_LABEL">GoldSrc Hooks DLL:</label>
+                <input type="text" id="goldsrc-hooks-dll-path-input" data-str-placeholder="CAPTURE_CONFIG.GOLDSRC_HOOKS_PLACEHOLDER" placeholder="Optional path to dodstudio_goldsrc_hooks.dll (blank = bundled default)" style="flex: 1;" />
+                <button id="goldsrc-hooks-browse-btn" data-str="CAPTURE_CONFIG.BROWSE_BUTTON">Browse</button>
+              </div>
+              <div id="goldsrc-hooks-path-warning" class="path-warning" style="display: none;"></div>
+              <div class="input-row">
                 <label data-str="CAPTURE_CONFIG.HLAE_FFMPEG_LABEL">HLAE FFmpeg:</label>
                 <span id="hlae-ffmpeg-status" style="flex: 1; font-size: 0.85em; opacity: 0.85;"></span>
                 <button id="hlae-ffmpeg-link-btn" data-str="CAPTURE_CONFIG.HLAE_FFMPEG_LINK_BUTTON" style="display: none;">Point HLAE at FFmpeg</button>

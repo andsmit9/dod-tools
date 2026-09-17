@@ -68,6 +68,10 @@ pub struct CapturePayload {
     /// Optional absolute path to ffmpeg.exe; falls back to bundled then PATH.
     #[serde(default)]
     pub ffmpeg_override_path: Option<String>,
+    /// Optional override for `dodstudio_goldsrc_hooks.dll`; falls back to the bundled
+    /// default -- see `PatcherConfig::goldsrc_hooks_dll_path`.
+    #[serde(default)]
+    pub goldsrc_hooks_dll_path: Option<String>,
     #[serde(default = "default_resolution_width")]
     pub resolution_width: i32,
     #[serde(default = "default_resolution_height")]
@@ -262,6 +266,7 @@ fn config_from_payload(payload: &CapturePayload) -> PatcherConfig {
     cfg.initial_delay = payload.initial_delay;
     cfg.fast_forward_speed = payload.fast_forward_speed;
     cfg.ffmpeg_override_path = payload.ffmpeg_override_path.clone();
+    cfg.goldsrc_hooks_dll_path = payload.goldsrc_hooks_dll_path.clone();
     cfg.resolution_width = payload.resolution_width;
     cfg.resolution_height = payload.resolution_height;
     cfg.ffmpeg_capture = payload.ffmpeg_capture;
@@ -1376,8 +1381,15 @@ fn write_hidden_sidecar(path: &Path) -> std::io::Result<()> {
 
 /// Validates the HLAE/hl.exe paths, ensures `<hl_parent>/dod` exists, and
 /// builds a minimal `PatcherConfig` carrying just the fields
-/// `build_hlae_process` reads (hlae_path/game_path/resolution).
-fn resolve_preview_env(hlae_path: &str, game_path: &str) -> Result<(PatcherConfig, PathBuf), String> {
+/// `build_hlae_process` reads (hlae_path/game_path/resolution/
+/// goldsrc_hooks_dll_path). `goldsrc_hooks_dll_path` matters only to callers
+/// that actually launch HLAE (`launch_demo_preview`) — `generate_all_previews`
+/// never spawns a process, so it passes `None` here and it's simply unused.
+fn resolve_preview_env(
+    hlae_path: &str,
+    game_path: &str,
+    goldsrc_hooks_dll_path: Option<String>,
+) -> Result<(PatcherConfig, PathBuf), String> {
     if hlae_path.trim().is_empty() || game_path.trim().is_empty() {
         return Err(crate::messages::configure_paths_before("previewing"));
     }
@@ -1400,6 +1412,7 @@ fn resolve_preview_env(hlae_path: &str, game_path: &str) -> Result<(PatcherConfi
     let patcher_config = PatcherConfig {
         hlae_path: hlae_path.to_string(),
         game_path: game_path.to_string(),
+        goldsrc_hooks_dll_path,
         ..PatcherConfig::default()
     };
     Ok((patcher_config, dod_dir))
@@ -1457,9 +1470,10 @@ pub async fn launch_demo_preview(
     hlae_path: String,
     game_path: String,
     streaks: Vec<SerializedStreak>,
+    goldsrc_hooks_dll_path: Option<String>,
 ) -> Result<(), String> {
     crate::messages::flatten_spawn_blocking(tokio::task::spawn_blocking(move || {
-        let (patcher_config, dod_dir) = resolve_preview_env(&hlae_path, &game_path)?;
+        let (patcher_config, dod_dir) = resolve_preview_env(&hlae_path, &game_path, goldsrc_hooks_dll_path)?;
         let (jobs, _generated) = patch_bookmark_previews(streaks, &dod_dir, &patcher_config)?;
         let job = jobs.first().ok_or_else(|| crate::messages::FAILED_TO_BUILD_PREVIEW_PATCH_JOB.to_string())?;
 
@@ -1490,7 +1504,7 @@ pub async fn generate_all_previews(
     streaks: Vec<SerializedStreak>,
 ) -> Result<usize, String> {
     crate::messages::flatten_spawn_blocking(tokio::task::spawn_blocking(move || {
-        let (patcher_config, dod_dir) = resolve_preview_env(&hlae_path, &game_path)?;
+        let (patcher_config, dod_dir) = resolve_preview_env(&hlae_path, &game_path, None)?;
         let (_jobs, generated) = patch_bookmark_previews(streaks, &dod_dir, &patcher_config)?;
         Ok(generated)
     }))
@@ -1601,6 +1615,7 @@ pub async fn launch_standalone_game(app: tauri::AppHandle) -> Result<(), String>
             resolution_height: settings.resolution_height,
             ffmpeg_capture: settings.ffmpeg_capture,
             ffmpeg_capture_codec: native::patch::CaptureCodec::from_str_id(&settings.ffmpeg_capture_codec),
+            goldsrc_hooks_dll_path: settings.goldsrc_hooks_dll_path.clone(),
             ..PatcherConfig::default()
         };
 
@@ -1846,6 +1861,7 @@ mod tests {
             hlae_path: "C:/hlae/hlae.exe".to_string(),
             game_path: "C:/dod/hl.exe".to_string(),
             ffmpeg_override_path: None,
+            goldsrc_hooks_dll_path: None,
             resolution_width: 1920,
             resolution_height: 1080,
             ffmpeg_capture: false,
