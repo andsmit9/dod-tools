@@ -172,9 +172,16 @@ those instructions would overwrite the ones after them.
 ### Provenance of the HLAE comparison
 
 What follows was derived by **observing `AfxHookGoldSrc.dll`'s compiled code** —
-a binary shipped to users and installed on this machine — not from HLAE's
-source. No HLAE source was read, copied or adapted, and none of it is present in
-this repository.
+not from HLAE's source. No HLAE source was read, copied or adapted, and none of
+it is present in this repository.
+
+Worth stating plainly, because the rest of this document disassembles a *game*
+binary and this is a different thing: `AfxHookGoldSrc.dll` is **HLAE's own work
+product**, written by the advancedfx project. Reading it to learn how another
+tool author solved a problem is not the same act as reading `client.dll`, even
+where the copyright analysis lands in the same place. The conclusions below are
+offered as credit rather than as a silent borrowing, which is also why HLAE is
+named in `scan.rs` and `detour.rs` rather than only here.
 
 What was taken from HLAE is a *technique* (detour a signature-scanned span) and a
 *convention* (the `??` spelling of a byte pattern, kept identical so a signature
