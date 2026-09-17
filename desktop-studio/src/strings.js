@@ -17,7 +17,7 @@
 export const STRINGS = {
   // ── Top Navigation / Header ─────────────────────────────────────────────
   NAV: {
-    APP_TITLE: 'DoD Tools Studio',
+    APP_TITLE: 'DoD Studio',
     // OS window title (taskbar/Alt-Tab) — set by updater_pane.js once the
     // running build's version is known. baseVersion excludes the
     // experimental channel's `-<run number>` suffix — the title just needs
@@ -29,7 +29,7 @@ export const STRINGS = {
     appWindowTitle: (baseVersion, buildKind) => {
       const tags = { local: 'local build', debug: 'debug build', experimental: 'experimental build' };
       const tag = tags[buildKind];
-      return `DoD Tools Studio — v${baseVersion}${tag ? ` (${tag})` : ''}`;
+      return `DoD Studio — v${baseVersion}${tag ? ` (${tag})` : ''}`;
     },
     STUDIO_TAB: 'Studio',
     DEMO_AUDITOR_TAB: 'Demo Auditor',
@@ -195,7 +195,7 @@ export const STRINGS = {
         'How frames get onto disk. Frame sequence and Video are both HLAE, deterministic and capable of any frame rate. OBS records the screen in real time instead, which is faster to a finished file but captures whatever actually rendered.',
     CAPTURE_MODE_OBS: 'OBS (real time)',
     CAPTURE_MODE_OBS_TITLE:
-        'OBS records the game window while dod-tools tells it when each clip starts and stops. HLAE records nothing. Output is a finished, playable file with audio already in it — but capture runs at real time, so frames drop if the machine cannot keep up, and high capture rates are not possible. Separate HUD is not available on this path.',
+        'OBS records the game window while dod-studio tells it when each clip starts and stops. HLAE records nothing. Output is a finished, playable file with audio already in it — but capture runs at real time, so frames drop if the machine cannot keep up, and high capture rates are not possible. Separate HUD is not available on this path.',
     // Shown beside the progress bar while a batch runs, not in the settings —
     // there is nothing to configure and no mode it does not apply to. The
     // throttle is the engine's: GoldSrc slows its frame loop when the window is
@@ -224,14 +224,14 @@ export const STRINGS = {
     OBS_UNREACHABLE: 'Could not reach OBS.',
     obsConnectedSummary: (obsVersion, websocketVersion) =>
         `Connected — OBS ${obsVersion} (obs-websocket ${websocketVersion})`,
-    // Read-only — dod-tools always targets its own fixed profile/scene, there
+    // Read-only — dod-studio always targets its own fixed profile/scene, there
     // is nothing here for the user to change.
     obsUsingSummary: (profile, scene) => `Using OBS profile "${profile}", scene "${scene}"`,
     obsCanvasSummary: (canvas, output, fps) => `Canvas ${canvas}, output ${output} @ ${Math.round(fps)} fps`,
     obsRecordingToSummary: (directory) => `Recording to ${directory}`,
     obsMissingRequests: (requests) => `This OBS is missing: ${requests.join(', ')} — capture cannot run.`,
     OBS_ALREADY_RECORDING: 'OBS is already recording — stop it before starting a batch.',
-    OBS_ALREADY_STREAMING: 'OBS is streaming — dod-tools will not drive its recorder.',
+    OBS_ALREADY_STREAMING: 'OBS is streaming — dod-studio will not drive its recorder.',
     obsTestFailed: (err) => `OBS test failed: ${err}`,
     OBS_CAPTURE_FPS_LABEL: 'OBS Capture FPS:',
     OBS_CAPTURE_FPS_TITLE:
@@ -241,11 +241,11 @@ export const STRINGS = {
     OBS_ENABLE_HINT:
         'OBS 28+: enable this under Tools → WebSocket Server Settings (the checkbox, not the Connect Info panel).',
     OBS_PROVISION_HINT:
-        'dod-tools manages its own OBS profile/scene ([DoD-Tools]) — your own setup is never touched.',
+        'dod-studio manages its own OBS profile/scene ([DoD-Studio]) — your own setup is never touched.',
     // ── Orphaned recording left by a previous run ───────────────────────────
     OBS_ORPHAN_TITLE: 'OBS is still recording',
     obsOrphanPrompt: (directory) =>
-        `OBS is still recording into a dod-tools take folder:\n\n${directory}\n\nA previous session ended without stopping it — a crash, a force-quit or a power cut. It will keep recording until the drive fills.\n\nStop it and keep the clip?`,
+        `OBS is still recording into a dod-studio take folder:\n\n${directory}\n\nA previous session ended without stopping it — a crash, a force-quit or a power cut. It will keep recording until the drive fills.\n\nStop it and keep the clip?`,
     OBS_ORPHAN_STOP: 'Stop and keep',
     OBS_ORPHAN_LEAVE: 'Leave it',
     obsOrphanRecovered: (video) => `Stopped OBS and kept the recording: ${video}`,
@@ -302,7 +302,7 @@ export const STRINGS = {
     // several, and needs a route through rather than a raw OS error.
     HLAE_FFMPEG_ELEVATE_TITLE: 'Administrator rights needed',
     HLAE_FFMPEG_ELEVATE_PROMPT: (ini) =>
-        `${ini} is inside a protected folder, so Windows won't let dod-tools write there directly.\n\nContinue and Windows will ask for permission, then write a two-line file pointing HLAE at your FFmpeg. Nothing else is changed, and an existing ffmpeg.ini is never replaced.`,
+        `${ini} is inside a protected folder, so Windows won't let dod-studio write there directly.\n\nContinue and Windows will ask for permission, then write a two-line file pointing HLAE at your FFmpeg. Nothing else is changed, and an existing ffmpeg.ini is never replaced.`,
     HLAE_FFMPEG_ELEVATE_CONFIRM: 'Ask Windows for permission',
     HLAE_FFMPEG_ELEVATE_REFUSED: 'Permission was declined, so nothing was written.',
     FFMPEG_OVERRIDE_LABEL: 'FFmpeg Override Path:',

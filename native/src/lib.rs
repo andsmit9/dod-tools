@@ -251,11 +251,11 @@ pub fn activity_log_dir() -> std::path::PathBuf {
 /// the decal flush work was reconstructed from it repeatedly. Test runs
 /// exercise real pipeline code that logs, so without this they append fixture
 /// names like `no_such_demo_should_ever_be_read.dem` into
-/// `%APPDATA%/dod-tools/logs` under their own session headers, indistinguishable
+/// `%APPDATA%/dod-studio/logs` under their own session headers, indistinguishable
 /// from a genuine capture that failed. It also means `cargo test` silently
 /// mutates a user file outside the repo. See issue #64.
 ///
-/// Two ways in. `DOD_TOOLS_LOG_DIR` redirects it for anyone who needs it —
+/// Two ways in. `DOD_STUDIO_LOG_DIR` redirects it for anyone who needs it —
 /// an integration test, a packaging check, someone reproducing a bug without
 /// stamping on their real record — and a `cfg(test)` build redirects itself.
 /// The env var is checked first so a test binary compiled *without* `cfg(test)`
@@ -263,11 +263,11 @@ pub fn activity_log_dir() -> std::path::PathBuf {
 /// ordinary dependency) can still be pointed somewhere safe.
 #[cfg(not(target_arch = "wasm32"))]
 fn redirected_log_dir() -> Option<std::path::PathBuf> {
-    if let Some(dir) = std::env::var_os("DOD_TOOLS_LOG_DIR") {
+    if let Some(dir) = std::env::var_os("DOD_STUDIO_LOG_DIR") {
         return Some(std::path::PathBuf::from(dir));
     }
     if cfg!(test) {
-        return Some(std::env::temp_dir().join("dod_tools_test_logs"));
+        return Some(std::env::temp_dir().join("dod_studio_test_logs"));
     }
     None
 }
@@ -367,7 +367,7 @@ pub fn log_markdown(msg: &str) {
 mod activity_log_tests {
     use super::*;
 
-    /// `DOD_TOOLS_LOG_DIR` is process-global, not thread-local, but `cargo
+    /// `DOD_STUDIO_LOG_DIR` is process-global, not thread-local, but `cargo
     /// test` runs every test in this file on its own thread of the same
     /// process by default. Without this, `the_env_override_outranks_everything`
     /// temporarily overriding the var could interleave with
@@ -404,13 +404,13 @@ mod activity_log_tests {
         // integration test that links this crate as an ordinary dependency, so
         // it is compiled without cfg(test) and would otherwise write to the
         // user's real log.
-        let want = std::env::temp_dir().join("dod_tools_override_probe");
-        let previous = std::env::var_os("DOD_TOOLS_LOG_DIR");
-        unsafe { std::env::set_var("DOD_TOOLS_LOG_DIR", &want) };
+        let want = std::env::temp_dir().join("dod_studio_override_probe");
+        let previous = std::env::var_os("DOD_STUDIO_LOG_DIR");
+        unsafe { std::env::set_var("DOD_STUDIO_LOG_DIR", &want) };
         let got = redirected_log_dir();
         match previous {
-            Some(p) => unsafe { std::env::set_var("DOD_TOOLS_LOG_DIR", p) },
-            None => unsafe { std::env::remove_var("DOD_TOOLS_LOG_DIR") },
+            Some(p) => unsafe { std::env::set_var("DOD_STUDIO_LOG_DIR", p) },
+            None => unsafe { std::env::remove_var("DOD_STUDIO_LOG_DIR") },
         }
         assert_eq!(got, Some(want));
     }

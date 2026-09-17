@@ -1,6 +1,6 @@
 # dem (vendored, patched fork)
 
-> **This is `dod-tools`' vendored fork of the upstream `dem` crate** (pulled in via
+> **This is `dod-studio`' vendored fork of the upstream `dem` crate** (pulled in via
 > `[patch.crates-io]` in the workspace root `Cargo.toml`, not published to crates.io
 > as this fork). The badges/links below describe the *upstream* project this was
 > forked from — see the root [`README.md`](../README.md)'s "Why the fork of `dem`"

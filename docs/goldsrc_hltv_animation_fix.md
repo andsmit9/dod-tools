@@ -160,7 +160,7 @@ refinement on top, not the point.
   cvar can answer "what is this set to" on its own; whether the fix's
   preconditions are being met in the current view is a different question, and
   this is where it is answered.
-- Log file: `%APPDATA%\dod-tools\logs\dodstudio_goldsrc_hooks.log`, with wall clock **and** a `[demo NNN.NNN]`
+- Log file: `%APPDATA%\dod-studio\logs\dodstudio_goldsrc_hooks.log`, with wall clock **and** a `[demo NNN.NNN]`
   prefix. Read it directly.
 - **"animations corrected" counter** — the honest number. A running total is
   printed every 100 animations.
@@ -246,7 +246,7 @@ the viewmodel snaps to the new family's idle rather than playing the model's own
    `docs/goldsrc_dod_quirks.md` and the two-installs rule).
 2. `dodtools_hltv_animation_fix 1`, `dodtools_log_weapon_model 1`.
 3. Play an HLTV demo in-eye and let the director move between players.
-4. Read `%APPDATA%\dod-tools\logs\dodstudio_goldsrc_hooks.log`. The lines that matter, in order of value:
+4. Read `%APPDATA%\dod-studio\logs\dodstudio_goldsrc_hooks.log`. The lines that matter, in order of value:
    - `now spectating … holding … viewmodel "…"` on every camera switch,
    - `body sequence -> stand_bar_reload (index N)` as the player acts,
    - one line per animation forced, with the sequence label it chose,

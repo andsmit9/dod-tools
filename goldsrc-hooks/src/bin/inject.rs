@@ -1,5 +1,5 @@
 //! Minimal manual DLL injector for testing goldsrc-hooks against a running
-//! hl.exe, independent of any future dod-tools capture-pipeline wiring.
+//! hl.exe, independent of any future DoD Studio capture-pipeline wiring.
 //!
 //! Usage: inject <pid> <path-to-dll>
 //!
@@ -125,6 +125,6 @@ fn main() -> ExitCode {
     }
 
     println!("Injected {dll_path_str} into process {pid}.");
-    println!("Check %APPDATA%\\dod-tools\\logs\\dodstudio_goldsrc_hooks.log for its own diagnostics.");
+    println!("Check %APPDATA%\\dod-studio\\logs\\dodstudio_goldsrc_hooks.log for its own diagnostics.");
     ExitCode::SUCCESS
 }

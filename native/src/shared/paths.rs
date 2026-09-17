@@ -1,25 +1,169 @@
 use std::path::{Path, PathBuf};
 
+/// Name of this app's directory under `%APPDATA%`.
+pub const APPDATA_DIR_NAME: &str = "dod-studio";
+
+/// What it was called before #257. Migrated from, never written to.
+pub const LEGACY_APPDATA_DIR_NAME: &str = "dod-tools";
+
+// A tripwire against the obvious way this breaks. Both pairs below exist only
+// so the *old* spelling stays readable after #257, and both were briefly
+// clobbered by the tree-wide `dod-tools` -> `dod-studio` sweep that renamed
+// everything else -- silently, because a legacy constant equal to the current
+// one just makes the compatibility path a no-op. It is not a runtime check
+// because there is no runtime in which it could ever be true.
+const _: () = {
+    assert!(
+        !const_str_eq(APPDATA_DIR_NAME, LEGACY_APPDATA_DIR_NAME),
+        "LEGACY_APPDATA_DIR_NAME must keep the pre-#257 spelling -- equal to the current one, the migration silently does nothing"
+    );
+    assert!(
+        !const_str_eq(PREVIEW_SIDECAR_EXT, LEGACY_PREVIEW_SIDECAR_EXT),
+        "LEGACY_PREVIEW_SIDECAR_EXT must keep the pre-#257 spelling -- equal to the current one, existing previews become unrecognisable"
+    );
+};
+
+/// `==` on `&str` is not const, and these have to be compared at compile time.
+const fn const_str_eq(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut i = 0;
+    while i < a.len() {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// `%APPDATA%\dod-studio`, created if absent.
+///
+/// Deliberately does no migration of its own. This is called from logging, and
+/// logging is reachable from inside a migration, so a self-migrating getter
+/// would be a recursion waiting to happen. See [`migrate_legacy_appdata_dir`],
+/// which the app calls once, explicitly, before anything reads settings.
 pub fn get_appdata_dir() -> PathBuf {
-    let mut path = dirs::config_dir().unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-    path.push("dod-tools");
+    let path = appdata_base().join(APPDATA_DIR_NAME);
     let _ = std::fs::create_dir_all(&path);
     path
 }
 
+fn appdata_base() -> PathBuf {
+    dirs::config_dir().unwrap_or_else(|| std::env::current_dir().unwrap_or_default())
+}
+
+/// What a migration run did, for the caller to log.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct AppDataMigration {
+    /// Entries moved out of the legacy directory.
+    pub moved: Vec<String>,
+    /// Entries left behind because the new directory already had that name.
+    /// Never overwritten -- whatever is already in the new location wins.
+    pub skipped: Vec<String>,
+    /// Entries that could not be moved, with the reason.
+    pub failed: Vec<(String, String)>,
+    /// Whether the now-empty legacy directory was removed.
+    pub legacy_removed: bool,
+}
+
+impl AppDataMigration {
+    pub fn did_something(&self) -> bool {
+        !self.moved.is_empty() || !self.skipped.is_empty() || !self.failed.is_empty()
+    }
+}
+
+/// Moves `%APPDATA%\dod-studio`'s contents into `%APPDATA%\dod-studio` (#257).
+///
+/// Moves **entry by entry** rather than renaming the directory, which matters
+/// more than it looks: any binary that logs -- `preview_cli`, a test, the
+/// companion DLL -- creates `dod-studio/logs` the first time it runs. A
+/// whole-directory rename would see the destination already exists, decline,
+/// and strand `settings.json` in the old folder forever. Per-entry means the
+/// order things happen to run in cannot lose the user's settings.
+///
+/// An entry that already exists at the destination is left alone, so this is
+/// safe to call repeatedly and never overwrites newer state with older.
+pub fn migrate_legacy_appdata_dir() -> AppDataMigration {
+    let base = appdata_base();
+    migrate_appdata_dir_between(&base.join(LEGACY_APPDATA_DIR_NAME), &base.join(APPDATA_DIR_NAME))
+}
+
+fn migrate_appdata_dir_between(legacy: &Path, current: &Path) -> AppDataMigration {
+    let mut report = AppDataMigration::default();
+    if !legacy.is_dir() || legacy == current {
+        return report;
+    }
+    let Ok(entries) = std::fs::read_dir(legacy) else {
+        return report;
+    };
+    if std::fs::create_dir_all(current).is_err() {
+        return report;
+    }
+
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let destination = current.join(entry.file_name());
+        if destination.exists() {
+            report.skipped.push(name);
+            continue;
+        }
+        match std::fs::rename(entry.path(), &destination) {
+            Ok(()) => report.moved.push(name),
+            Err(e) => report.failed.push((name, e.to_string())),
+        }
+    }
+
+    // Only ever removes an empty directory -- `remove_dir` fails rather than
+    // recursing, so anything that could not be moved is still there afterwards.
+    report.legacy_removed = std::fs::remove_dir(legacy).is_ok();
+    report
+}
+
+/// Extension of the hidden sidecar that marks a `_preview.dem` as this app's.
+pub const PREVIEW_SIDECAR_EXT: &str = "dodstudio_preview";
+
+/// The pre-#257 spelling. Read, never written.
+///
+/// #257 renamed the console commands outright, on the grounds that no released
+/// build ever carried the old spelling. These sidecars are different: they are
+/// **on disk already**, in the user's own demo folders, and the sidecar is the
+/// only thing marking its `_preview.dem` as ours. A scan taught only the new
+/// name would leave every existing preview permanently unrecognisable -- both
+/// invisible to the app's own cleanup and indistinguishable from a demo the
+/// user named that way themselves. That is exactly the orphaning #218/#250
+/// fixed, and renaming carelessly would reintroduce it wholesale.
+const LEGACY_PREVIEW_SIDECAR_EXT: &str = "dodtools_preview";
+
+/// The sidecar beside `demo` in whichever spelling it uses, if one exists.
+///
+/// New sidecars are always written as [`PREVIEW_SIDECAR_EXT`]; this is only
+/// about reading what is already there.
+pub fn preview_sidecar(demo: &Path) -> Option<PathBuf> {
+    for ext in [PREVIEW_SIDECAR_EXT, LEGACY_PREVIEW_SIDECAR_EXT] {
+        let candidate = demo.with_extension(ext);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 /// Stem of the primer demo `build_batch_queue` writes into the game's `dod/`
-/// folder. The `dodtools_` prefix matches every other file this app writes
-/// there (`dodtools_helper.cfg`, `dodtools_capture_done.cfg`) and keeps the
+/// folder. The `dodstudio_` prefix matches every other file this app writes
+/// there (`dodstudio_helper.cfg`, `dodstudio_capture_done.cfg`) and keeps the
 /// name out of the space a player's own demo could plausibly occupy (#197).
-pub const PRIMER_DEMO_STEM: &str = "dodtools_primer";
+pub const PRIMER_DEMO_STEM: &str = "dodstudio_primer";
 
 /// Prefix of every patched chain demo `build_batch_queue` writes into `dod/`,
 /// followed by a zero-padded job number. See [`PRIMER_DEMO_STEM`] for why the
-/// `dodtools_` part is there.
-pub const CHAIN_DEMO_PREFIX: &str = "dodtools_chain_";
+/// `dodstudio_` part is there.
+pub const CHAIN_DEMO_PREFIX: &str = "dodstudio_chain_";
 
 /// True for exactly the filenames `build_batch_queue` gives patched chain
-/// demos (`dodtools_chain_01.dem`, `dodtools_chain_9999.dem`, ...). No cap on
+/// demos (`dodstudio_chain_01.dem`, `dodstudio_chain_9999.dem`, ...). No cap on
 /// digit count -- a batch of over a hundred thousand demos is implausible, but
 /// nothing here assumes an upper bound either. A plain
 /// `starts_with(CHAIN_DEMO_PREFIX)` would also match a source demo that
@@ -40,9 +184,9 @@ pub fn is_chain_demo_filename(filename: &str) -> bool {
 /// Stable identity for one capture take, shared by the capture and render
 /// pipelines so they can correlate without either knowing about the other.
 ///
-/// Takes land at `<capture_dir>/<session_id>/dodtools_chain_JJ_bN/`, so the
+/// Takes land at `<capture_dir>/<session_id>/dodstudio_chain_JJ_bN/`, so the
 /// key is normally the last two path components lowercased:
-/// `session_20260818_142233/dodtools_chain_01_b0`. Deliberately *not* the absolute
+/// `session_20260818_142233/dodstudio_chain_01_b0`. Deliberately *not* the absolute
 /// path — capture output routinely gets moved onto a different drive before
 /// rendering, which would invalidate it — and deliberately not the take name
 /// alone, which repeats every batch.
@@ -127,8 +271,8 @@ pub fn clear_capture_scratch(
 
     if auto_clear_logs {
         remove_scratch_file(&console_log_path(game_root), "Auto-clear Logs");
-        remove_scratch_file(&dod_dir.join("dodtools_helper.cfg"), "Auto-clear Logs");
-        remove_scratch_file(&dod_dir.join("dodtools_capture_done.cfg"), "Auto-clear Logs");
+        remove_scratch_file(&dod_dir.join("dodstudio_helper.cfg"), "Auto-clear Logs");
+        remove_scratch_file(&dod_dir.join("dodstudio_capture_done.cfg"), "Auto-clear Logs");
         remove_scratch_file(&dod_dir.join("dod_quit.cfg"), "Auto-clear Logs");
         // Legacy only: nothing has written a per-chain cfg since the helper cfg
         // absorbed those aliases. Kept so a user upgrading from a build that
@@ -137,7 +281,7 @@ pub fn clear_capture_scratch(
         if let Ok(entries) = std::fs::read_dir(&dod_dir) {
             for entry in entries.flatten() {
                 let filename = entry.file_name().to_string_lossy().to_string();
-                if filename.starts_with("dodtools_chain_") && filename.ends_with(".cfg") {
+                if filename.starts_with("dodstudio_chain_") && filename.ends_with(".cfg") {
                     remove_scratch_file(&entry.path(), "Auto-clear Logs");
                 }
             }
@@ -167,7 +311,7 @@ pub fn clear_capture_scratch(
     }
 
     if auto_clear_previews {
-        // Only a `_preview.dem` with its hidden `.dodtools_preview` sidecar is
+        // Only a `_preview.dem` with its hidden `.dodstudio_preview` sidecar is
         // ours. A demo the user named that way themselves has no sidecar and is
         // left alone.
         for scan_dir in [dod_dir.clone(), game_root.to_path_buf()] {
@@ -185,10 +329,9 @@ pub fn clear_capture_scratch(
                 if !filename.ends_with("_preview.dem") {
                     continue;
                 }
-                let sidecar = path.with_extension("dodtools_preview");
-                if !sidecar.exists() {
+                let Some(sidecar) = preview_sidecar(&path) else {
                     continue;
-                }
+                };
                 // Order matters, and the sidecar goes second on purpose. The
                 // sidecar is the *only* thing marking this demo as ours; drop
                 // it while the demo itself is still on disk and the demo can
@@ -241,24 +384,24 @@ mod tests {
 
     #[test]
     fn test_take_key_uses_last_two_components_lowercased() {
-        let key = take_key(Path::new(r"D:\Captures\Session_20260818_142233\Dodtools_Chain_01_b0"));
-        assert_eq!(key, Some("session_20260818_142233/dodtools_chain_01_b0".to_string()));
+        let key = take_key(Path::new(r"D:\Captures\Session_20260818_142233\Dodstudio_Chain_01_b0"));
+        assert_eq!(key, Some("session_20260818_142233/dodstudio_chain_01_b0".to_string()));
     }
 
     #[test]
     fn test_take_key_is_stable_across_drives() {
         // The same take copied to a different drive must produce the same key —
         // this is the whole reason the absolute path isn't used.
-        let a = take_key(Path::new(r"D:\Captures\session_1\dodtools_chain_01_b0"));
-        let b = take_key(Path::new(r"X:\somewhere\else\session_1\dodtools_chain_01_b0"));
+        let a = take_key(Path::new(r"D:\Captures\session_1\dodstudio_chain_01_b0"));
+        let b = take_key(Path::new(r"X:\somewhere\else\session_1\dodstudio_chain_01_b0"));
         assert_eq!(a, b);
         assert!(a.is_some());
     }
 
     #[test]
     fn test_take_key_distinguishes_sessions() {
-        let a = take_key(Path::new(r"D:\c\session_1\dodtools_chain_01_b0"));
-        let b = take_key(Path::new(r"D:\c\session_2\dodtools_chain_01_b0"));
+        let a = take_key(Path::new(r"D:\c\session_1\dodstudio_chain_01_b0"));
+        let b = take_key(Path::new(r"D:\c\session_2\dodstudio_chain_01_b0"));
         assert_ne!(a, b);
     }
 
@@ -276,16 +419,16 @@ mod tests {
         // wav/bmp — one level deeper, inside HLAE's own take0000 auto-numbered
         // subfolder. Both must resolve to the same key or auto-Rendered can
         // never correlate a finished render back to its highlights.
-        let capture_side = take_key(Path::new(r"D:\Captures\session_1\dodtools_chain_01_b0"));
-        let render_side = take_key(Path::new(r"D:\Captures\session_1\dodtools_chain_01_b0\take0000"));
+        let capture_side = take_key(Path::new(r"D:\Captures\session_1\dodstudio_chain_01_b0"));
+        let render_side = take_key(Path::new(r"D:\Captures\session_1\dodstudio_chain_01_b0\take0000"));
         assert_eq!(capture_side, render_side);
-        assert_eq!(capture_side, Some("session_1/dodtools_chain_01_b0".to_string()));
+        assert_eq!(capture_side, Some("session_1/dodstudio_chain_01_b0".to_string()));
     }
 
     #[test]
     fn test_take_key_handles_higher_numbered_takes() {
-        let key = take_key(Path::new(r"D:\Captures\session_1\dodtools_chain_01_b0\take0003"));
-        assert_eq!(key, Some("session_1/dodtools_chain_01_b0".to_string()));
+        let key = take_key(Path::new(r"D:\Captures\session_1\dodstudio_chain_01_b0\take0003"));
+        assert_eq!(key, Some("session_1/dodstudio_chain_01_b0".to_string()));
     }
 
     #[test]
@@ -315,15 +458,15 @@ mod tests {
 
     #[test]
     fn is_chain_demo_filename_matches_real_output_names() {
-        assert!(is_chain_demo_filename("dodtools_chain_01.dem"));
-        assert!(is_chain_demo_filename("dodtools_chain_9999.dem"));
+        assert!(is_chain_demo_filename("dodstudio_chain_01.dem"));
+        assert!(is_chain_demo_filename("dodstudio_chain_9999.dem"));
     }
 
-    /// No digit-count cap: a batch large enough to need `dodtools_chain_100500.dem`
+    /// No digit-count cap: a batch large enough to need `dodstudio_chain_100500.dem`
     /// must still be cleaned up correctly, not silently left behind.
     #[test]
     fn is_chain_demo_filename_has_no_upper_bound_on_digit_count() {
-        assert!(is_chain_demo_filename("dodtools_chain_100500.dem"));
+        assert!(is_chain_demo_filename("dodstudio_chain_100500.dem"));
     }
 
     /// A source demo that happens to share the "chain_" prefix must never be
@@ -332,9 +475,9 @@ mod tests {
     fn is_chain_demo_filename_rejects_lookalike_source_demos() {
         assert!(!is_chain_demo_filename("chain_harrington_round1.dem"));
         assert!(!is_chain_demo_filename("chain_.dem"));
-        assert!(!is_chain_demo_filename("dodtools_chain_01.dem.bak"));
+        assert!(!is_chain_demo_filename("dodstudio_chain_01.dem.bak"));
         assert!(!is_chain_demo_filename("prefix_chain_01.dem"));
-        assert!(!is_chain_demo_filename("dodtools_chain_01.cfg"));
+        assert!(!is_chain_demo_filename("dodstudio_chain_01.cfg"));
     }
 
     /// Nothing but that one file may be touched — the game folder holds the
@@ -370,7 +513,7 @@ mod tests {
 /// released yet, and even confirming the process itself has left the process
 /// list (`sysinfo`) does not guarantee it either -- kernel object cleanup can
 /// lag a beat past both. The demo files hl.exe was just playing
-/// (`dodtools_primer.dem`, `dodtools_chain_NN.dem`) are what this exists for,
+/// (`dodstudio_primer.dem`, `dodstudio_chain_NN.dem`) are what this exists for,
 /// and both cleanup guards (`CaptureCleanupGuard` in `capture_engine.rs`,
 /// `WorkspaceGuard` in `patch/builder.rs`) call it for them. See #198.
 ///
@@ -420,7 +563,7 @@ mod auto_clear_previews_tests {
 
     fn make_preview(dir: &Path, stem: &str) -> (PathBuf, PathBuf) {
         let demo = dir.join(format!("{stem}_preview.dem"));
-        let sidecar = demo.with_extension("dodtools_preview");
+        let sidecar = demo.with_extension(PREVIEW_SIDECAR_EXT);
         std::fs::write(&demo, b"demo").unwrap();
         std::fs::write(&sidecar, b"").unwrap();
         (demo, sidecar)
@@ -511,7 +654,7 @@ mod remove_file_retrying_tests {
         let dir = std::env::temp_dir().join(format!("dod_rfr_plain_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("dodtools_chain_01.dem");
+        let file = dir.join("dodstudio_chain_01.dem");
         std::fs::write(&file, b"demo").unwrap();
 
         assert!(remove_file_retrying(&file).is_none());
@@ -533,7 +676,7 @@ mod remove_file_retrying_tests {
         let dir = std::env::temp_dir().join(format!("dod_rfr_delayed_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let file = dir.join("dodtools_chain_02.dem");
+        let file = dir.join("dodstudio_chain_02.dem");
         std::fs::write(&file, b"demo").unwrap();
 
         let handle = std::fs::OpenOptions::new().read(true).share_mode(1).open(&file).unwrap();
@@ -552,5 +695,104 @@ mod remove_file_retrying_tests {
 
         assert!(result.is_none(), "{result:?}");
         assert!(!file.exists());
+    }
+}
+
+#[cfg(test)]
+mod appdata_migration_tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("dod_migrate_{}_{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn write(path: &Path, body: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+
+    #[test]
+    fn moves_settings_and_logs_then_removes_the_empty_legacy_dir() {
+        let root = scratch("basic");
+        let legacy = root.join(LEGACY_APPDATA_DIR_NAME);
+        let current = root.join(APPDATA_DIR_NAME);
+        write(&legacy.join("settings.json"), r#"{"hlae_path":"x"}"#);
+        write(&legacy.join("logs").join("activity_20260917.md"), "# log");
+
+        let report = migrate_appdata_dir_between(&legacy, &current);
+
+        assert_eq!(std::fs::read_to_string(current.join("settings.json")).unwrap(), r#"{"hlae_path":"x"}"#);
+        assert!(current.join("logs").join("activity_20260917.md").is_file());
+        assert!(report.moved.contains(&"settings.json".to_string()));
+        assert!(report.legacy_removed, "an emptied legacy dir should be removed");
+        assert!(!legacy.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// The case a whole-directory rename gets wrong: something that logs ran
+    /// first, so the destination already exists. `settings.json` must still
+    /// come across.
+    #[test]
+    fn migrates_even_when_the_new_dir_already_exists() {
+        let root = scratch("exists");
+        let legacy = root.join(LEGACY_APPDATA_DIR_NAME);
+        let current = root.join(APPDATA_DIR_NAME);
+        write(&legacy.join("settings.json"), "old-settings");
+        write(&current.join("logs").join("activity_20260917.md"), "# new log");
+
+        let report = migrate_appdata_dir_between(&legacy, &current);
+
+        assert_eq!(std::fs::read_to_string(current.join("settings.json")).unwrap(), "old-settings");
+        assert!(report.moved.contains(&"settings.json".to_string()));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn never_overwrites_what_the_new_dir_already_has() {
+        let root = scratch("skip");
+        let legacy = root.join(LEGACY_APPDATA_DIR_NAME);
+        let current = root.join(APPDATA_DIR_NAME);
+        write(&legacy.join("settings.json"), "stale");
+        write(&current.join("settings.json"), "live");
+
+        let report = migrate_appdata_dir_between(&legacy, &current);
+
+        assert_eq!(std::fs::read_to_string(current.join("settings.json")).unwrap(), "live");
+        assert_eq!(report.skipped, vec!["settings.json".to_string()]);
+        assert!(!report.legacy_removed, "the legacy dir still holds the skipped file");
+        assert!(legacy.join("settings.json").is_file());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn is_a_no_op_when_there_is_nothing_to_migrate() {
+        let root = scratch("noop");
+        let report = migrate_appdata_dir_between(
+            &root.join(LEGACY_APPDATA_DIR_NAME),
+            &root.join(APPDATA_DIR_NAME),
+        );
+        assert!(!report.did_something());
+        assert!(!root.join(APPDATA_DIR_NAME).exists(), "must not create the new dir for nothing");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// Calling it twice must be harmless -- the app calls it every launch.
+    #[test]
+    fn running_twice_changes_nothing_the_second_time() {
+        let root = scratch("twice");
+        let legacy = root.join(LEGACY_APPDATA_DIR_NAME);
+        let current = root.join(APPDATA_DIR_NAME);
+        write(&legacy.join("settings.json"), "s");
+
+        let first = migrate_appdata_dir_between(&legacy, &current);
+        let second = migrate_appdata_dir_between(&legacy, &current);
+
+        assert!(first.did_something());
+        assert!(!second.did_something());
+        assert_eq!(std::fs::read_to_string(current.join("settings.json")).unwrap(), "s");
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

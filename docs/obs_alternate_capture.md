@@ -5,11 +5,11 @@
 > user's existing scenes/profiles, with scene *creation* explicitly deferred as a low-priority
 > nice-to-have, invoked only on request. What actually shipped (`native/src/obs/provision.rs`) goes
 > further in the direction "If it is ever automated, it goes through a profile" already pointed:
-> a dedicated `[DoD-Tools]` profile *and* scene, auto-created and **re-verified/repaired on every
+> a dedicated `[DoD-Studio]` profile *and* scene, auto-created and **re-verified/repaired on every
 > connect** rather than created once and left alone — no picker at all, since there is nothing left
 > for the user to choose between. The "detect and state, never mutate" discipline these sections
 > argue for still holds, just narrowed to its actual point: never mutate the user's *own* profiles/
-> scenes. A profile/scene dod-tools creates and names itself was always the doc's own answer to "if
+> scenes. A profile/scene dod-studio creates and names itself was always the doc's own answer to "if
 > it is ever automated" — this just stopped waiting to automate it. See that module's doc comment for
 > the current design and reasoning; the sections below are the historical case for it, still useful
 > context but no longer the plan.
@@ -21,7 +21,7 @@
 > [#74](https://github.com/ccoventry/dod-tools/pull/74) (the feature).
 >
 > **What has actually been run:** a full batch producing playable clips with audio; a cancel
-> mid-recording; OBS killed between blocks; OBS killed mid-recording; dod-tools killed mid-batch and
+> mid-recording; OBS killed between blocks; OBS killed mid-recording; dod-studio killed mid-batch and
 > recovered on restart. Every failure path in the table below except the stall watchdog.
 >
 > - OBS Game Capture captures the HLAE-injected `hl.exe` — verified against a real frame.
@@ -140,7 +140,7 @@ risk in the document and it is now closed on evidence rather than on the absence
 target process has exited records black into a file that is valid in every other respect — right
 resolution, right frame rate, right duration, sometimes real audio from another source. Two probe
 recordings were wasted that way before the cause was understood, and the second one looked exactly
-like a hook collision. dod-tools owns the game's lifecycle, and *any* rebuild of the workspace while
+like a hook collision. dod-studio owns the game's lifecycle, and *any* rebuild of the workspace while
 `tauri dev` is watching takes `hl.exe` down with it — including a `git checkout` that touches
 `Cargo.toml`. The game having been launched earlier in a session is not evidence that it is running
 now, which is why `probe_obs` checks and says so.
@@ -287,7 +287,7 @@ project has not used, and is worth a moment's thought before it lands.
 The pipeline schedules commands at exact frame ordinals *inside the demo*, and injects them as
 `ConsoleCommand` frames. OBS is an external process that knows nothing about demo ticks. The capture
 engine, meanwhile, spawns one `hl.exe` for the entire batch and then does nothing but poll for
-`DOD_TOOLS_EXIT_TRIGGER` (`native/src/capture_engine.rs`) — it has no per-block awareness at all.
+`DOD_STUDIO_EXIT_TRIGGER` (`native/src/capture_engine.rs`) — it has no per-block awareness at all.
 
 Something has to cross that gap. There are three ways, and the second is the recommendation.
 
@@ -295,11 +295,11 @@ Something has to cross that gap. There are three ways, and the second is the rec
 
 `build_safe_echos` already writes an echo at every stage boundary of every block:
 
-    [dod-tools] SPEED_FLUSH - Tick 41250
-    [dod-tools] AUDIO_SYNC - Tick 41350
-    [dod-tools] START_RECORD - Tick 41450
-    [dod-tools] STOP_RECORD - Tick 44950
-    [dod-tools] FAST_FORWARD - Tick 45150
+    [dod-studio] SPEED_FLUSH - Tick 41250
+    [dod-studio] AUDIO_SYNC - Tick 41350
+    [dod-studio] START_RECORD - Tick 41450
+    [dod-studio] STOP_RECORD - Tick 44950
+    [dod-studio] FAST_FORWARD - Tick 45150
 
 plus a `BREADCRUMB` every `BREADCRUMB_INTERVAL_TICKS`. With `-condebug` — **which
 `build_hlae_process` passes on every launch, with no way to turn it off**
@@ -309,7 +309,7 @@ file the app already knows about and deletes (`shared::paths::remove_console_log
 So the signalling channel exists, is tick-accurate, needs no new engine commands, and costs the
 capture nothing. **The app has simply never read it.**
 
-The alternative the issue proposed — reusing the `DOD_TOOLS_EXIT_TRIGGER` trick, i.e.
+The alternative the issue proposed — reusing the `DOD_STUDIO_EXIT_TRIGGER` trick, i.e.
 `mirv_movie_filename X; mirv_recordmovie_start; mirv_recordmovie_stop` to make a folder appear —
 works, but should be rejected here: it starts a real HLAE recording for an instant, which yanks
 `host_framerate` to `1/mirv_movie_fps` and back. That is a visible hitch landing *precisely* at the
@@ -559,7 +559,7 @@ write rather than a recording call.
 That is the same act this document already refuses to perform on somebody's existing profile, and
 the same act it already sanctions inside a profile we created. So the two threads converge:
 
-> **A dedicated `dod-tools` profile is not just about the canvas. It is what allows lossless capture
+> **A dedicated `dod-studio` profile is not just about the canvas. It is what allows lossless capture
 > and per-clip export routing to coexist at all.**
 
 Inside our own profile, writing `FFFilePath` per block is unremarkable. Inside theirs it is not
@@ -674,7 +674,7 @@ anything, and a one-time manual fix is cheap.
 
 **If it is ever automated, it goes through a profile.** `CreateProfile` and `SetCurrentProfile` are
 both present, and a profile carries canvas, output resolution, FPS, recording format, encoder and
-output directory — every setting this feature wants pinned. Create a `dod-tools` profile, switch to
+output directory — every setting this feature wants pinned. Create a `dod-studio` profile, switch to
 it for the batch, switch back after. Additive and reversible, never editing the profile they are
 already using. `SetSceneItemTransform` exists to re-fit a source afterwards, but only ever inside a
 scene we created.
@@ -744,7 +744,7 @@ worrying about is one it spawned. OBS is not.
   refuse batches that would fit comfortably. The check should move to OBS's own record directory with
   an estimate sized to this path.
 - **`_route_N` junctions and `mirv_movie_filename` become dead weight** — HLAE writes nothing. They
-  can stay (harmless, and the `DOD_TOOLS_EXIT_TRIGGER` alias still uses the mechanism) or be skipped;
+  can stay (harmless, and the `DOD_STUDIO_EXIT_TRIGGER` alias still uses the mechanism) or be skipped;
   no reason to touch them in a first version.
 - **Capture modes are mutually exclusive.** Frame sequence / direct-to-video / OBS is a three-way
   choice, not three checkboxes. `ffmpeg_capture` and an OBS mode must not both be settable.
@@ -772,8 +772,8 @@ anything survive to send `StopRecord`?** Where nothing does, OBS records until t
 | Demo fails to load, or ends early | Same as `disconnect` | Same watchdog |
 | hl.exe freezes | Same as `disconnect` | Same watchdog |
 | OBS closed or crashes | Requests start failing | One reconnect, then abort the batch |
-| dod-tools panics | — | Nothing. `panic = "abort"`, no unwind, no `Drop` |
-| dod-tools force-killed, or power cut | — | Nothing |
+| dod-studio panics | — | Nothing. `panic = "abort"`, no unwind, no `Drop` |
+| dod-studio force-killed, or power cut | — | Nothing |
 
 **`disconnect` was the real gap.** Every guard in the capture loop keys off hl.exe being gone or a
 file appearing, and `disconnect` produces neither: the process sits happily at the menu while the
@@ -790,7 +790,7 @@ long.
 
 **The last two rows cannot be fixed on the way out.** Release builds set `panic = "abort"`, so a
 panic runs no destructor, and a force-quit or a power cut runs nothing at all. From outside the
-process all three are the same event: dod-tools is gone and OBS is still recording. So the recovery
+process all three are the same event: dod-studio is gone and OBS is still recording. So the recovery
 is on the way *back in* — `obs::recover` asks OBS at start-up whether it is recording into a folder
 shaped like `<take>/take0000/all`, which is a path only this app produces, and offers to stop it and
 fold the file. Anything else is somebody's own recording and is left alone.

@@ -126,7 +126,7 @@ const REQUIRED_REQUESTS: &[&str] = &[
     "GetRecordDirectory",
     "GetVideoSettings",
     "GetSceneList",
-    // Added for the dod-tools-owned profile/scene auto-provisioning
+    // Added for the dod-studio-owned profile/scene auto-provisioning
     // (see obs::provision) — every one of these is load-bearing for it now,
     // not just advisory the way GetProfileParameter is below.
     "GetProfileList",
@@ -267,7 +267,7 @@ impl ObsClient {
         if stream["outputActive"].as_bool().unwrap_or(false) {
             warnings.push(
                 "OBS is streaming. Driving its recorder during a live stream is not something \
-                 dod-tools should do uninvited; stop the stream or use a different capture mode."
+                 dod-studio should do uninvited; stop the stream or use a different capture mode."
                     .to_string(),
             );
         }
@@ -313,10 +313,10 @@ impl ObsClient {
     /// whatever is currently active — before anything below this call in the
     /// connect path switches profile or scene.
     ///
-    /// The ordering is the point: `obs::provision::ensure_dod_tools_setup`
+    /// The ordering is the point: `obs::provision::ensure_dod_studio_setup`
     /// mutates the user's live OBS (profile switch, scene switch, source
     /// creation/repair), and that must never happen out from under a stream
-    /// that has nothing to do with dod-tools, or a recording already running
+    /// that has nothing to do with dod-studio, or a recording already running
     /// under whatever profile the user was on. Call this first.
     pub fn refuse_if_busy(&mut self) -> Result<(), ObsError> {
         if self.is_recording()? {
@@ -328,7 +328,7 @@ impl ObsClient {
         if self.is_streaming()? {
             return Err(ObsError::Request {
                 request: "StartRecord".into(),
-                detail: "OBS is streaming. dod-tools will not drive its recorder during a live \
+                detail: "OBS is streaming. dod-studio will not drive its recorder during a live \
                          stream."
                     .into(),
             });
@@ -417,7 +417,7 @@ impl ObsClient {
                 warnings.push(format!(
                     "OBS is recording to {container}. If OBS is killed mid-batch that block is \
                      recoverable but cut short, with its last moment damaged. MKV or hybrid MP4 \
-                     lose nothing instead — dod-tools keeps whatever container OBS wrote."
+                     lose nothing instead — dod-studio keeps whatever container OBS wrote."
                 ));
             }
         }
@@ -504,14 +504,14 @@ impl ObsClient {
         Ok(())
     }
 
-    // ── dod-tools-owned profile/scene provisioning (obs::provision) ──────────
+    // ── dod-studio-owned profile/scene provisioning (obs::provision) ──────────
     //
     // Everything below writes to OBS, unlike `profile_param`/
     // `output_settings_warnings` above, which are deliberately read-only —
     // "the profile is the user's file, detect and warn, never write" — the
     // same discipline CLAUDE.md holds the game's own .cfg files to. That still
     // holds for the user's *own* profiles/scenes. What's below only ever
-    // touches the profile/scene/inputs dod-tools creates and names itself
+    // touches the profile/scene/inputs dod-studio creates and names itself
     // (obs::provision::PROFILE_NAME/SCENE_NAME) — never anything the user
     // already had, which is the entire reason that profile/scene exists as
     // its own dedicated thing instead of switching into whatever the user
@@ -573,7 +573,7 @@ impl ObsClient {
     /// input itself is untouched, only its placement in this particular
     /// scene changes. Needed alongside `create_input`: inputs are global in
     /// obs-websocket's model, so an input that already existed somewhere
-    /// else (a prior manual setup, an earlier dod-tools run against a scene
+    /// else (a prior manual setup, an earlier dod-studio run against a scene
     /// that has since been renamed) never goes through `create_input` at
     /// all — `provision::ensure_game_capture_source`/`ensure_game_audio_source`
     /// call this when `scene_item_id` comes back empty for exactly that case.
@@ -589,7 +589,7 @@ impl ObsClient {
     /// replace, not a merge, so a setting this call omits reverts to that
     /// kind's default rather than surviving from whatever was there before.
     /// That's the repair behaviour provisioning wants: a drifted or
-    /// hand-edited setting on the dod-tools-owned input gets put back
+    /// hand-edited setting on the dod-studio-owned input gets put back
     /// exactly, not partially.
     pub fn set_input_settings(&mut self, name: &str, settings: Value) -> Result<(), ObsError> {
         self.request(
@@ -649,7 +649,7 @@ impl ObsClient {
     /// Sets canvas (base) and output resolution to the same `width`x`height`,
     /// and the output frame rate to `fps_num`/`fps_den`. Canvas == output is
     /// deliberate: a mismatch means every frame is scaled twice for nothing
-    /// (see `preflight`'s own warning for this), and dod-tools owns this
+    /// (see `preflight`'s own warning for this), and dod-studio owns this
     /// profile specifically so it can just set both correctly instead of
     /// warning about it.
     pub fn set_video_settings(
@@ -774,7 +774,7 @@ impl ObsClient {
 
     fn request(&mut self, request_type: &str, data: Value) -> Result<Value, ObsError> {
         self.next_id += 1;
-        let id = format!("dodtools-{}", self.next_id);
+        let id = format!("dodstudio-{}", self.next_id);
         self.send(json!({
             "op": 6,
             "d": { "requestType": request_type, "requestId": id, "requestData": data }

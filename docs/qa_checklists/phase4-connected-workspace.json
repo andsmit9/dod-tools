@@ -54,7 +54,7 @@
         "No callout appears when the search box is empty (nothing was narrowed)",
         "Typing a search that matches zero demos shows “No demos match the current search” instead of clearing anything",
         "Regression: 2 untracked demos total, search narrows to 1 visible untracked — after Clear Untracked, toast says just “Removed 1 untracked demo(s)” with NO “kept ... with tracked work” claim (the hidden one is untracked too, not kept for being tracked — fixed 2026-08-19)",
-        "After clicking, a “[queue] Clear Untracked: ...” line appears in crash_log.md (%APPDATA%/dod-tools/logs/crash_log.md) with the right count and demo names",
+        "After clicking, a “[queue] Clear Untracked: ...” line appears in crash_log.md (%APPDATA%/dod-studio/logs/crash_log.md) with the right count and demo names",
         "Regression: select a tracked demo (so it survives the clear), click Clear Untracked — that same demo stays selected/highlighted afterward instead of jumping to row 1 (fixed 2026-08-20, see engineering_backlog.md)",
         "With a search active, select a tracked demo that's visible, click Clear Untracked — same demo stays selected afterward, same as without a search"
       ]

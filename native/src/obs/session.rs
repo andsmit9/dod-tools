@@ -97,7 +97,7 @@ pub struct ObsSession {
 
 impl ObsSession {
     /// Connects, refuses if OBS is busy with something else, provisions (and
-    /// switches into) dod-tools' own profile and scene, then checks the
+    /// switches into) dod-studio' own profile and scene, then checks the
     /// install.
     ///
     /// Fails loudly rather than degrading: every failure here otherwise
@@ -123,9 +123,9 @@ impl ObsSession {
         // preflight is about to validate. It also hands back whatever was
         // active before the switch, captured at the one moment that's
         // knowable — after this call, "current" already reads back as
-        // dod-tools' own profile/scene.
+        // dod-studio' own profile/scene.
         let provision::ProvisionResult { previous_profile, previous_scene } =
-            provision::ensure_dod_tools_setup(&mut client, game_width, game_height, capture_fps, 1)?;
+            provision::ensure_dod_studio_setup(&mut client, game_width, game_height, capture_fps, 1)?;
 
         let preflight = client.preflight(game_width, game_height)?;
 
@@ -548,7 +548,7 @@ mod tests {
     #[test]
     fn folds_a_recording_into_the_stream_folder() {
         let root = scratch("fold");
-        let dest = root.join("dodtools_chain_01_b0").join(TAKE_FOLDER).join(STREAM_FOLDER);
+        let dest = root.join("dodstudio_chain_01_b0").join(TAKE_FOLDER).join(STREAM_FOLDER);
         std::fs::create_dir_all(&dest).unwrap();
         let recorded = dest.join("2026-08-28 03-26-01.mp4");
         std::fs::write(&recorded, b"x").unwrap();

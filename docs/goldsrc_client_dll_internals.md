@@ -481,7 +481,7 @@ read overflow`); and the constant it used, `DRC_CMD_INEYE = 5`, is actually
 `DRC_CMD_TIMESCALE` — so even once the framing was fixed, the message being
 sent was not the one intended. Neither mattered in the end.
 
-`MESSAGE` (6) and `STUFFTEXT` (10), the two commands dod-tools injects for
+`MESSAGE` (6) and `STUFFTEXT` (10), the two commands dod-studio injects for
 bookmarks, sit inside the handled range. That is why those work, and it
 corroborates the command numbering above.
 

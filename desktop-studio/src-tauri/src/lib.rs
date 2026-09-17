@@ -478,6 +478,30 @@ fn get_weapon_display_names() -> std::collections::HashMap<String, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Before the builder, not in `.setup()`: `SettingsManager::new()` below is
+    // a `.manage(..)` argument, so it is constructed -- and reads settings.json
+    // -- before any setup hook runs. Migrating after that would read the new,
+    // empty location and hand the user a default config.
+    let migration = native::shared::paths::migrate_legacy_appdata_dir();
+    if migration.did_something() {
+        native::log_markdown(&format!(
+            "📁 **Settings** — moved {} item(s) from %APPDATA%\\{} to %APPDATA%\\{}{}{} (#257)",
+            migration.moved.len(),
+            native::shared::paths::LEGACY_APPDATA_DIR_NAME,
+            native::shared::paths::APPDATA_DIR_NAME,
+            if migration.skipped.is_empty() {
+                String::new()
+            } else {
+                format!("; left {} already present at the destination", migration.skipped.len())
+            },
+            if migration.failed.is_empty() {
+                String::new()
+            } else {
+                format!("; FAILED to move {:?}", migration.failed)
+            },
+        ));
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

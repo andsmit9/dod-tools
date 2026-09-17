@@ -15,7 +15,7 @@
 "app_menu_help"                "Help"
 "app_menu_about"               "About..."
 
-"app_about_title"              "About dod-tools"
+"app_about_title"              "About dod-studio"
 "app_about_desc"               "A utility for auditing and analyzing Day of Defeat 1.3 demo files."
 "app_about_github"             "GitHub Repository"
 "app_about_close"              "Close"

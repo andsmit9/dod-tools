@@ -46,7 +46,7 @@ pub const FORMAT: u32 = 1;
 /// — so an empty block plus this file would look successful. That is handled by
 /// `is_metadata`, which the emptiness check consults, rather than by writing
 /// somewhere else and hoping nobody re-runs verification later.
-pub const TAKE_FILE: &str = "dodtools_take.json";
+pub const TAKE_FILE: &str = "dodstudio_take.json";
 
 /// Whether a directory entry is one of ours, and so must not be mistaken for
 /// captured output. `take_folder_has_content` asks this.
@@ -172,7 +172,7 @@ mod tests {
 
     #[test]
     fn a_take_is_found_from_either_folder_render_studio_hands_out() {
-        let (block, take) = block_with_take("finds", "session_20260827_120000", "dodtools_chain_01_b0");
+        let (block, take) = block_with_take("finds", "session_20260827_120000", "dodstudio_chain_01_b0");
         write(&block, &SessionMeta::new("session_20260827_120000", 120)).expect("write");
 
         // The scanner admits a take at the block folder or at the nested
@@ -187,8 +187,8 @@ mod tests {
         // 120, then more at 300. Each batch gets its own session folder and each
         // take carries its own file, so neither can speak for the other.
         let root = scratch("two_batches");
-        let slow = root.join("session_20260827_120000").join("dodtools_chain_01_b0");
-        let fast = root.join("session_20260827_130000").join("dodtools_chain_01_b0");
+        let slow = root.join("session_20260827_120000").join("dodstudio_chain_01_b0");
+        let fast = root.join("session_20260827_130000").join("dodstudio_chain_01_b0");
         std::fs::create_dir_all(&slow).expect("dirs");
         std::fs::create_dir_all(&fast).expect("dirs");
         write(&slow, &SessionMeta::new("session_20260827_120000", 120)).expect("write");
@@ -207,17 +207,17 @@ mod tests {
         // whatever folder they were dropped into — the exact bug this feature
         // exists to catch, one level up.
         let root = scratch("moved");
-        let origin = root.join("session_A").join("dodtools_chain_01_b0");
+        let origin = root.join("session_A").join("dodstudio_chain_01_b0");
         let elsewhere = root.join("session_B");
         std::fs::create_dir_all(&origin).expect("dirs");
         std::fs::create_dir_all(&elsewhere).expect("dirs");
         write(&origin, &SessionMeta::new("session_A", 120)).expect("write");
         // A neighbour in the destination that says something different.
-        let neighbour = elsewhere.join("dodtools_chain_02_b0");
+        let neighbour = elsewhere.join("dodstudio_chain_02_b0");
         std::fs::create_dir_all(&neighbour).expect("dirs");
         write(&neighbour, &SessionMeta::new("session_B", 300)).expect("write");
 
-        let moved = elsewhere.join("dodtools_chain_01_b0");
+        let moved = elsewhere.join("dodstudio_chain_01_b0");
         std::fs::rename(&origin, &moved).expect("move the take");
 
         assert_eq!(
@@ -231,14 +231,14 @@ mod tests {
     fn a_take_with_no_metadata_is_not_a_problem() {
         // Every take captured before this existed, and any folder assembled by
         // hand. Silence is the correct answer, not a warning.
-        let (_block, take) = block_with_take("absent", "session_x", "dodtools_chain_01_b0");
+        let (_block, take) = block_with_take("absent", "session_x", "dodstudio_chain_01_b0");
         assert_eq!(read_for_take(&take), None);
         assert_eq!(fps_mismatch_warning(&take, 300), None);
     }
 
     #[test]
     fn an_unreadable_or_future_format_is_ignored_rather_than_guessed() {
-        let (block, take) = block_with_take("garbage", "session_x", "dodtools_chain_01_b0");
+        let (block, take) = block_with_take("garbage", "session_x", "dodstudio_chain_01_b0");
         std::fs::write(block.join(TAKE_FILE), b"{not json").expect("write");
         assert_eq!(read_for_take(&take), None);
 
@@ -252,14 +252,14 @@ mod tests {
 
     #[test]
     fn a_matching_rate_says_nothing() {
-        let (block, take) = block_with_take("match", "session_x", "dodtools_chain_01_b0");
+        let (block, take) = block_with_take("match", "session_x", "dodstudio_chain_01_b0");
         write(&block, &SessionMeta::new("s", 120)).expect("write");
         assert_eq!(fps_mismatch_warning(&take, 120), None);
     }
 
     #[test]
     fn the_warning_states_the_direction_and_the_factor() {
-        let (block, take) = block_with_take("mismatch", "session_x", "dodtools_chain_01_b0");
+        let (block, take) = block_with_take("mismatch", "session_x", "dodstudio_chain_01_b0");
         write(&block, &SessionMeta::new("s", 120)).expect("write");
 
         // The bug as it actually happened: captured at 120, rendered at 300.
@@ -276,7 +276,7 @@ mod tests {
     fn a_nonsense_recorded_rate_is_not_used_to_scold_the_user() {
         // A zero would divide by zero and a negative is meaningless; either way
         // there is nothing trustworthy to compare against.
-        let (block, take) = block_with_take("zero", "session_x", "dodtools_chain_01_b0");
+        let (block, take) = block_with_take("zero", "session_x", "dodstudio_chain_01_b0");
         write(&block, &SessionMeta::new("s", 0)).expect("write");
         assert_eq!(fps_mismatch_warning(&take, 300), None);
     }
@@ -297,7 +297,7 @@ mod tests {
         // folder is non-empty. Without this, an empty block plus our file would
         // report a capture that never happened.
         assert!(is_metadata(std::ffi::OsStr::new(TAKE_FILE)));
-        assert!(is_metadata(std::ffi::OsStr::new("DODTOOLS_TAKE.JSON")));
+        assert!(is_metadata(std::ffi::OsStr::new("DODSTUDIO_TAKE.JSON")));
         assert!(!is_metadata(std::ffi::OsStr::new("00000.bmp")));
         assert!(!is_metadata(std::ffi::OsStr::new("sound.wav")));
     }

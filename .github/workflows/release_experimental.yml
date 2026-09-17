@@ -107,7 +107,7 @@ jobs:
         with:
           projectPath: desktop-studio
           tagName: experimental-latest
-          releaseName: "DoD Tools Studio ${{ steps.version.outputs.EXPERIMENTAL_VERSION }} (experimental)"
+          releaseName: "DoD Studio ${{ steps.version.outputs.EXPERIMENTAL_VERSION }} (experimental)"
           releaseBody: "On-demand experimental build from `dev` — not for general use. Built from commit ${{ github.sha }}."
           releaseDraft: false
           prerelease: true

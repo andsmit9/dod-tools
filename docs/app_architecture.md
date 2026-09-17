@@ -34,7 +34,7 @@
 
 ## Filesystem & IO Routing
 - **NTFS `read_dir` Non-Determinism:** `std::fs::read_dir` order is non-deterministic on Windows. Sort shared state collections (`QUEUED_DEMOS`) precisely at the background ingestion layer using `binary_search_by` and `insert`. Do not use `.push()` followed by `.sort_by()` to avoid O(N log N) overhead choking the thread.
-- **Filesystem Semantics:** Enforce `remove_dir_all` strictly for HLAE/Engine signal folders (`DOD_TOOLS_EXIT_TRIGGER`). Reserve `remove_file` for persistent configuration artifacts.
+- **Filesystem Semantics:** Enforce `remove_dir_all` strictly for HLAE/Engine signal folders (`DOD_STUDIO_EXIT_TRIGGER`). Reserve `remove_file` for persistent configuration artifacts.
 - **Waterfall Resolution Pattern:** External tools (e.g., FFmpeg) must utilize a prioritized resolution chain: User Override -> Bundled Local -> System Path.
 - **Data Portability:** Path resolution (Saved Path -> Project Root -> Last Used Directory -> Game Directory) must be dynamically computed in memory. Never destructively overwrite relative saved JSON paths with locally resolved absolute paths.
 - **Watermarking Pattern:** Output generated assets tracking using 1:1 sidecar files (`.dodtools_preview`) to maintain atomic cleanup and file-system renaming resilience, avoiding master list locks.
@@ -45,7 +45,7 @@
   their own session headers, indistinguishable from a genuine capture that failed. That matters more
   here than it would elsewhere: the activity log is this project's primary record of what a capture
   did, and the whole decal-flush investigation was reconstructed from it. `activity_log_dir()` now
-  redirects through `DOD_TOOLS_LOG_DIR`, falling back to a temp scratch under `cfg(test)`. The env
+  redirects through `DOD_STUDIO_LOG_DIR`, falling back to a temp scratch under `cfg(test)`. The env
   var is checked **first**, because `cfg(test)` only covers this crate's own unit tests — an
   integration test, a bin target, or another crate's tests linking this one as an ordinary
   dependency all compile it without `cfg(test)` and would otherwise write to the real log. Verified

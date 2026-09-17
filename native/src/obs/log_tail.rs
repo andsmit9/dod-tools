@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// Prefix `build_safe_echos` puts on every marker.
-const LOG_TAG: &str = "[dod-tools]";
+const LOG_TAG: &str = "[dod-studio]";
 
 /// How often the tailer looks for new bytes.
 ///
@@ -104,7 +104,7 @@ pub struct Marker {
     pub label: String,
 }
 
-/// Tails `qconsole.log` and sends every `[dod-tools]` marker onward.
+/// Tails `qconsole.log` and sends every `[dod-studio]` marker onward.
 pub struct LogTailer {
     path: PathBuf,
     offset: u64,
@@ -256,15 +256,15 @@ mod tests {
     fn parses_the_markers_the_pipeline_actually_emits() {
         // Exactly as they appeared in the measured batch.
         let cases = [
-            ("[dod-tools] SPEED_FLUSH - Tick 86371", MarkerKind::SpeedFlush, Some(86371)),
-            ("[dod-tools] AUDIO_SYNC - Tick 88267", MarkerKind::AudioSync, Some(88267)),
-            ("[dod-tools] START_RECORD - Tick 88741", MarkerKind::StartRecord, Some(88741)),
-            ("[dod-tools] STOP_RECORD - Tick 93481", MarkerKind::StopRecord, Some(93481)),
-            ("[dod-tools] FAST_FORWARD - Tick 93955", MarkerKind::FastForward, Some(93955)),
-            ("[dod-tools] BREADCRUMB - Tick 45000", MarkerKind::Breadcrumb, Some(45000)),
-            ("[dod-tools] BATCH_COMPLETE", MarkerKind::BatchComplete, None),
-            ("[dod-tools] DEMO_START 5 14 2", MarkerKind::DemoStart, None),
-            ("[dod-tools] NEXT_CLIP 5 14 2 3", MarkerKind::NextClip, None),
+            ("[dod-studio] SPEED_FLUSH - Tick 86371", MarkerKind::SpeedFlush, Some(86371)),
+            ("[dod-studio] AUDIO_SYNC - Tick 88267", MarkerKind::AudioSync, Some(88267)),
+            ("[dod-studio] START_RECORD - Tick 88741", MarkerKind::StartRecord, Some(88741)),
+            ("[dod-studio] STOP_RECORD - Tick 93481", MarkerKind::StopRecord, Some(93481)),
+            ("[dod-studio] FAST_FORWARD - Tick 93955", MarkerKind::FastForward, Some(93955)),
+            ("[dod-studio] BREADCRUMB - Tick 45000", MarkerKind::Breadcrumb, Some(45000)),
+            ("[dod-studio] BATCH_COMPLETE", MarkerKind::BatchComplete, None),
+            ("[dod-studio] DEMO_START 5 14 2", MarkerKind::DemoStart, None),
+            ("[dod-studio] NEXT_CLIP 5 14 2 3", MarkerKind::NextClip, None),
         ];
         for (line, kind, tick) in cases {
             let m = parse_marker(line).unwrap_or_else(|| panic!("no marker from {:?}", line));
@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn demo_start_carries_job_idx_total_and_clip_count() {
-        let m = parse_marker("[dod-tools] DEMO_START 5 14 2").unwrap();
+        let m = parse_marker("[dod-studio] DEMO_START 5 14 2").unwrap();
         assert_eq!(m.kind, MarkerKind::DemoStart);
         assert_eq!(m.demo_progress, Some((5, 14, 2)));
     }
@@ -284,13 +284,13 @@ mod tests {
     /// `None`, even one that happens to be all digits after the tag.
     #[test]
     fn non_demo_start_markers_carry_no_demo_progress() {
-        let m = parse_marker("[dod-tools] START_RECORD - Tick 88741").unwrap();
+        let m = parse_marker("[dod-studio] START_RECORD - Tick 88741").unwrap();
         assert_eq!(m.demo_progress, None);
     }
 
     #[test]
     fn next_clip_carries_job_idx_total_clip_idx_and_clip_count() {
-        let m = parse_marker("[dod-tools] NEXT_CLIP 5 14 2 3").unwrap();
+        let m = parse_marker("[dod-studio] NEXT_CLIP 5 14 2 3").unwrap();
         assert_eq!(m.kind, MarkerKind::NextClip);
         assert_eq!(m.next_clip_progress, Some((5, 14, 2, 3)));
         assert_eq!(m.demo_progress, None, "NextClip must not also carry demo_progress");
@@ -299,7 +299,7 @@ mod tests {
     /// The engine prefixes its own text; the tag can sit mid-line.
     #[test]
     fn finds_the_tag_anywhere_in_the_line() {
-        let m = parse_marker("some engine noise [dod-tools] START_RECORD - Tick 7").unwrap();
+        let m = parse_marker("some engine noise [dod-studio] START_RECORD - Tick 7").unwrap();
         assert_eq!(m.kind, MarkerKind::StartRecord);
         assert_eq!(m.tick, Some(7));
     }
@@ -314,7 +314,7 @@ mod tests {
     /// logged — but it must not be mistaken for a stage boundary.
     #[test]
     fn unknown_labels_are_other_not_a_stage() {
-        let m = parse_marker("[dod-tools] CUSTOM_CMD1_BEFORE - Tick 41947").unwrap();
+        let m = parse_marker("[dod-studio] CUSTOM_CMD1_BEFORE - Tick 41947").unwrap();
         assert_eq!(m.kind, MarkerKind::Other);
         assert_eq!(m.tick, Some(41947));
     }
@@ -324,12 +324,12 @@ mod tests {
     #[test]
     fn starts_at_the_end_of_an_existing_log() {
         let p = temp("history");
-        std::fs::write(&p, "[dod-tools] START_RECORD - Tick 1\n").unwrap();
+        std::fs::write(&p, "[dod-studio] START_RECORD - Tick 1\n").unwrap();
         let mut t = LogTailer::at_end(&p);
         assert!(t.poll().is_empty(), "history must not be replayed");
 
         let mut f = std::fs::OpenOptions::new().append(true).open(&p).unwrap();
-        writeln!(f, "[dod-tools] STOP_RECORD - Tick 2").unwrap();
+        writeln!(f, "[dod-studio] STOP_RECORD - Tick 2").unwrap();
         f.flush().unwrap();
         let got = t.poll();
         assert_eq!(got.len(), 1);
@@ -346,7 +346,7 @@ mod tests {
         let mut t = LogTailer::at_end(&p);
 
         let mut f = std::fs::OpenOptions::new().append(true).open(&p).unwrap();
-        write!(f, "[dod-tools] START_RE").unwrap();
+        write!(f, "[dod-studio] START_RE").unwrap();
         f.flush().unwrap();
         assert!(t.poll().is_empty(), "half a line is not a marker yet");
 
@@ -364,11 +364,11 @@ mod tests {
     #[test]
     fn a_truncated_log_is_read_from_the_start() {
         let p = temp("truncate");
-        std::fs::write(&p, "[dod-tools] BREADCRUMB - Tick 1\n[dod-tools] BREADCRUMB - Tick 2\n").unwrap();
+        std::fs::write(&p, "[dod-studio] BREADCRUMB - Tick 1\n[dod-studio] BREADCRUMB - Tick 2\n").unwrap();
         let mut t = LogTailer::at_end(&p);
         assert!(t.poll().is_empty());
 
-        std::fs::write(&p, "[dod-tools] START_RECORD - Tick 5\n").unwrap();
+        std::fs::write(&p, "[dod-studio] START_RECORD - Tick 5\n").unwrap();
         let got = t.poll();
         assert_eq!(got.len(), 1, "content after a truncation is live");
         assert_eq!(got[0].tick, Some(5));

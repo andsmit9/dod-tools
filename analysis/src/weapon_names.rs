@@ -2,7 +2,7 @@ use crate::localization::translate_key;
 use dod::Weapon;
 
 /// Every `Weapon` variant paired with the `weapon.*` loc-file key that names
-/// it in `localizations/dod_tools_english.txt`. The single list both
+/// it in `localizations/dod_studio_english.txt`. The single list both
 /// [`weapon_display_name`] and [`all_weapon_display_names`] draw from, so a
 /// resolved name can never disagree with itself between the two.
 const WEAPON_KEYS: &[(Weapon, &str)] = &[

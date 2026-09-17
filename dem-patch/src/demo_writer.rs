@@ -30,10 +30,10 @@ impl Demo {
     /// `write_to_bytes`, abandonable partway through.
     ///
     /// Serialising a full-length GoldSrc demo is the single most expensive step
-    /// in dod-tools' decal-flush pass — about 3 seconds for a 110MB, 730k-frame
+    /// in dod-studio' decal-flush pass — about 3 seconds for a 110MB, 730k-frame
     /// demo, roughly 70% of the whole pass — and it used to be one
     /// uninterruptible call. A user cancelling a capture batch had to wait it
-    /// out, once per job still in flight. See dod-tools#193.
+    /// out, once per job still in flight. See dod-studio#193.
     ///
     /// `should_cancel` is polled once every `CANCEL_CHECK_FRAMES` frames rather
     /// than per frame, which keeps an atomic load off a loop that runs

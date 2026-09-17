@@ -361,12 +361,12 @@ impl ObsConnectionReport {
     }
 }
 
-/// Tests the OBS connection, provisions (and switches into) dod-tools' own
+/// Tests the OBS connection, provisions (and switches into) dod-studio' own
 /// profile and scene, and reports everything the settings panel shows.
 ///
 /// **Not read-only**, unlike its old contract — this is the "validated" hook
-/// point `obs::provision::ensure_dod_tools_setup` runs from (see that
-/// module's docs): creates/repairs the dod-tools profile, scene and sources
+/// point `obs::provision::ensure_dod_studio_setup` runs from (see that
+/// module's docs): creates/repairs the dod-studio profile, scene and sources
 /// if needed, and switches into them. Refuses first if OBS is already
 /// recording or streaming under whatever the user's own profile is, so this
 /// never mutates live state out from under something unrelated. Called on
@@ -400,7 +400,7 @@ pub async fn obs_test_connection(
             Err(e) if e.is_transport() => {
                 let msg = if is_obs_process_running() {
                     format!(
-                        "OBS is running, but dod-tools can't reach it at {resolved_host}:{resolved_port}. Check Tools -> WebSocket Server Settings is enabled and the port matches."
+                        "OBS is running, but dod-studio can't reach it at {resolved_host}:{resolved_port}. Check Tools -> WebSocket Server Settings is enabled and the port matches."
                     )
                 } else {
                     "OBS isn't running. Launch it (or use Launch OBS above), then try again.".to_string()
@@ -412,7 +412,7 @@ pub async fn obs_test_connection(
         if let Err(e) = client.refuse_if_busy() {
             return ObsConnectionReport::failed(e);
         }
-        if let Err(e) = native::obs::provision::ensure_dod_tools_setup(
+        if let Err(e) = native::obs::provision::ensure_dod_studio_setup(
             &mut client,
             game_width,
             game_height,
@@ -459,7 +459,7 @@ pub struct ObsOrphanReport {
     pub ours: bool,
 }
 
-/// Asks OBS whether it is still recording a dod-tools take from a previous run.
+/// Asks OBS whether it is still recording a dod-studio take from a previous run.
 ///
 /// Read-only, and quiet about failure on purpose: this runs at start-up, where
 /// "OBS is not running" is the normal answer and not something to report.
@@ -1349,14 +1349,14 @@ pub async fn scan_directory_impl(
     result
 }
 
-// ── Bookmark Previews (.dodtools_preview) ─────────────────────────────────────
+// ── Bookmark Previews (.dodstudio_preview) ─────────────────────────────────────
 //
 // `build_preview_patch_jobs` (native/src/patch/builder.rs) groups a flat list
 // of streaks by `source_demo` and, per demo, injects one `svc_director`
 // STUFFTEXT "bookmark" event per selected highlight (plus MATCH_START/DEMO_END)
 // into a copy of the original saved as `<stem>_preview.dem` — the events show
 // up as named markers when the file is loaded through GoldSrc's `viewdemo` VCR
-// UI. Each output file is marked with a hidden `.dodtools_preview` sidecar so
+// UI. Each output file is marked with a hidden `.dodstudio_preview` sidecar so
 // it's never mistaken for a real recorded demo.
 //
 // Two entry points share this core:
@@ -1420,7 +1420,7 @@ fn resolve_preview_env(
 
 /// Builds one bookmark-preview `PatchJob` per source demo present in
 /// `streaks` and patches it — unless a previous run already left a valid
-/// `<stem>_preview.dem` + `.dodtools_preview` sidecar in place, in which case
+/// `<stem>_preview.dem` + `.dodstudio_preview` sidecar in place, in which case
 /// that existing file is reused as-is rather than regenerated. Returns the
 /// full job list (every source demo, patched or reused — callers need the
 /// resolved output path either way) alongside how many were freshly patched
@@ -1442,7 +1442,7 @@ fn patch_bookmark_previews(
     let cancel_token = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let mut generated = 0usize;
     for job in &jobs {
-        let sidecar_path = job.output_demo.with_extension("dodtools_preview");
+        let sidecar_path = job.output_demo.with_extension(native::shared::paths::PREVIEW_SIDECAR_EXT);
         if job.output_demo.is_file() && sidecar_path.is_file() {
             // Already previewed in an earlier session — the bookmark set is
             // derived purely from this demo's own highlights, which don't
@@ -1653,7 +1653,7 @@ pub async fn launch_obs(app: tauri::AppHandle) -> Result<(), String> {
             return Err(crate::messages::OBS_NOT_FOUND_AT_CONFIGURED_PATH.to_string());
         }
         let mut cmd = std::process::Command::new(&obs_exe_path);
-        // Without this OBS inherits dod-tools' own CWD instead of its own
+        // Without this OBS inherits dod-studio' own CWD instead of its own
         // install directory, and fails to find its own relative-pathed data
         // (locale/en-US.ini, etc.) — measured, not theoretical. Same fix
         // `build_hlae_process` already applies for HLAE/hl.exe.
@@ -1723,7 +1723,7 @@ pub fn kill_engine_processes() -> Result<(), String> {
 // pile up in `<hl>/dod` across capture sessions when `auto_clear_previews`
 // is off. These two commands back the "Clear Previews" audit modal: scan for
 // leftovers and let the user purge them on confirmation. A file only counts
-// as an orphaned preview if it still carries its hidden `.dodtools_preview`
+// as an orphaned preview if it still carries its hidden `.dodstudio_preview`
 // sidecar — the same marker `patch_bookmark_previews` stamps on every file
 // it generates — so a real demo that happens to end in `_preview.dem` is
 // never swept up.
@@ -1786,10 +1786,9 @@ pub async fn scan_orphaned_previews(game_dir: String) -> Result<Vec<PreviewFileS
                 continue;
             }
 
-            let sidecar_path = path.with_extension("dodtools_preview");
-            if !sidecar_path.is_file() {
+            let Some(sidecar_path) = native::shared::paths::preview_sidecar(&path) else {
                 continue;
-            }
+            };
 
             let demo_meta = match std::fs::metadata(&path) {
                 Ok(m) => m,
@@ -1818,7 +1817,7 @@ pub async fn scan_orphaned_previews(game_dir: String) -> Result<Vec<PreviewFileS
     .await
 }
 
-/// Deletes the given orphaned preview demos and their `.dodtools_preview`
+/// Deletes the given orphaned preview demos and their `.dodstudio_preview`
 /// sidecars. `file_paths` must be `demo_path` values as reported by
 /// `scan_orphaned_previews` — anything not ending in `_preview.dem` is
 /// skipped rather than deleted. Returns the count of demo files removed; a
@@ -1837,9 +1836,11 @@ pub async fn delete_orphaned_previews(file_paths: Vec<String>) -> Result<u32, St
                 continue;
             }
 
-            let sidecar_path = path.with_extension("dodtools_preview");
+            let sidecar_path = native::shared::paths::preview_sidecar(&path);
             let demo_removed = std::fs::remove_file(&path).is_ok();
-            let _ = std::fs::remove_file(&sidecar_path);
+            if let Some(sidecar_path) = sidecar_path {
+                let _ = std::fs::remove_file(&sidecar_path);
+            }
 
             if demo_removed {
                 deleted += 1;

@@ -65,15 +65,15 @@ path = "src/bin/preview_cli/main.rs"
 
 # Terminal demo analyzer (scoreboards, kills, chat, rounds).
 [[bin]]
-name = "dod-tools-cli"
+name = "dod-studio-cli"
 path = "src/bin/cli.rs"
 
 [[bin]]
-name = "dod-tools-dump"
+name = "dod-studio-dump"
 path = "src/bin/dump.rs"
 
 [[bin]]
-name = "dod-tools-inspect"
+name = "dod-studio-inspect"
 path = "src/bin/inspect.rs"
 
 # Map-library verification and fetch for a demo folder.

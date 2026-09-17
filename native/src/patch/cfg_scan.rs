@@ -432,7 +432,7 @@ pub const SCHEDULED_BANNED_COMMANDS: &[&str] =
 /// own message stream — Initial Commands (STUFFTEXT, injected right after
 /// `DemoStart`) and Scheduled Commands (injected `ConsoleCommand` frames)
 /// alike, since the engine's filter does not care when in the stream a
-/// command arrives. Confirmed the hard way, twice: `dod-tools` originally
+/// command arrives. Confirmed the hard way, twice: `dod-studio` originally
 /// planned to `exec` a per-demo generated config to set `mirv_movie_filename`
 /// (dodging the quoting/escaping an alias would need) and to inject `quit` at
 /// batch end to close the game automatically — neither ever did anything.

@@ -12,7 +12,7 @@
 //!     probe_obs obs [--host H] [--port P] [--password S] [--record SECS]
 //!
 //! **`log` answers: can the console log carry the start signal?** The capture
-//! pipeline already echoes `[dod-tools] START_RECORD - Tick N` at every stage
+//! pipeline already echoes `[dod-studio] START_RECORD - Tick N` at every stage
 //! boundary of every block, and `-condebug` is on by default, so those lines
 //! land in `qconsole.log` beside `hl.exe`. If the engine flushes them promptly,
 //! that file is a tick-accurate signalling channel the app can tail — no new
@@ -23,7 +23,7 @@
 //! were. Start this first, then dispatch a one-clip batch.
 //!
 //! The failure it is looking for is buffering, and buffering has a signature:
-//! several `[dod-tools]` lines arriving in a single read after a long silence.
+//! several `[dod-studio]` lines arriving in a single read after a long silence.
 //! Those are flagged as bursts, because a burst means the timestamps within it
 //! are the reader's, not the engine's.
 //!
@@ -64,7 +64,7 @@ const LOG_POLL: Duration = Duration::from_millis(16);
 /// between stage boundaries.
 const BURST_TICK_GAP: i64 = 100;
 
-const MARKER: &str = "[dod-tools]";
+const MARKER: &str = "[dod-studio]";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -86,7 +86,7 @@ fn main() {
                  usage:\n\
                  \x20 probe_obs log <path-to-qconsole.log>\n\
                  \x20     Tail the engine's console log during a live capture and timestamp\n\
-                 \x20     every [dod-tools] line's arrival. Start this BEFORE dispatching the\n\
+                 \x20     every [dod-studio] line's arrival. Start this BEFORE dispatching the\n\
                  \x20     batch. A saved log cannot answer this.\n\
                  \n\
                  \x20 probe_obs obs [--host H] [--port P] [--password S] [--record SECS]\n\
@@ -263,8 +263,8 @@ const WANTED: &[(&str, &str)] = &[
     ("SetCurrentProgramScene", "switch to the chosen scene (reversible mutation)"),
     ("SetVideoSettings", "canvas/output resolution and FPS — PROFILE-WIDE"),
     ("GetProfileList", "profiles — where video settings actually live"),
-    ("SetCurrentProfile", "switch to a dod-tools profile (reversible)"),
-    ("CreateProfile", "make a dod-tools profile instead of editing theirs"),
+    ("SetCurrentProfile", "switch to a dod-studio profile (reversible)"),
+    ("CreateProfile", "make a dod-studio profile instead of editing theirs"),
     ("GetSceneItemTransform", "a source's placement, in canvas coordinates"),
     ("SetSceneItemTransform", "re-fit a source after a canvas change"),
 ];
@@ -454,7 +454,7 @@ fn run_ffmpeg_mode(args: &[String]) {
     let mut host = "127.0.0.1".to_string();
     let mut port: u16 = 4455;
     let mut password: Option<String> = None;
-    let mut target = "C:\\dod-tools-routing-probe".to_string();
+    let mut target = "C:\\dod-studio-routing-probe".to_string();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -855,7 +855,7 @@ fn dir_snapshot(dir: &str) -> Vec<String> {
 
 /// Everything a scene picker in the app would need, dumped read-only.
 ///
-/// The question this answers is whether dod-tools can populate a dropdown of
+/// The question this answers is whether dod-studio can populate a dropdown of
 /// scenes and tell the user, per scene, whether it is actually usable for a
 /// capture — rather than making them describe their OBS setup by hand. All of
 /// it is reads: no scene is created, switched or modified here.
@@ -945,13 +945,13 @@ fn dump_scenes(client: &mut ObsClient) {
     println!(
         "\n    Everything above came from GetSceneList / GetSceneItemList /\n\
          \x20   GetInputList / GetInputSettings — reads only. This is what a scene\n\
-         \x20   dropdown in dod-tools would be built from."
+         \x20   dropdown in dod-studio would be built from."
     );
 }
 
 /// Whether the game is up, checked the same way `capture_engine` checks it.
 ///
-/// Note the game's lifecycle is not OBS's and not ours: dod-tools spawns
+/// Note the game's lifecycle is not OBS's and not ours: dod-studio spawns
 /// `hl.exe` per batch and taskkills it at the end, and a `tauri dev` hot reload
 /// takes it down too. So "is it running right now" genuinely has to be asked
 /// rather than assumed from having launched it earlier.
@@ -1191,10 +1191,10 @@ mod tests {
     #[test]
     fn tick_is_parsed_out_of_a_stage_echo() {
         assert_eq!(
-            parse_tick("[dod-tools] START_RECORD - Tick 41450"),
+            parse_tick("[dod-studio] START_RECORD - Tick 41450"),
             Some(41450)
         );
-        assert_eq!(parse_tick("[dod-tools] BATCH_COMPLETE"), None);
+        assert_eq!(parse_tick("[dod-studio] BATCH_COMPLETE"), None);
     }
 
     /// The echoes are chunked by `build_safe_echos` when they exceed the Cbuf
@@ -1203,7 +1203,7 @@ mod tests {
     #[test]
     fn tick_is_parsed_from_a_chunked_echo() {
         assert_eq!(
-            parse_tick("[dod-tools] CUSTOM_CMD1_BEFORE - Tick 900"),
+            parse_tick("[dod-studio] CUSTOM_CMD1_BEFORE - Tick 900"),
             Some(900)
         );
     }

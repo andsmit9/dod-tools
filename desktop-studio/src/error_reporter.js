@@ -37,7 +37,7 @@ function reportUncaught(source, err) {
   // Tagged and separate from the browser's own default uncaught-error
   // logging (which still happens on its own) — easy to grep/spot on
   // purpose, since the whole point is not blending into the raw trace.
-  console.error(`[dod-tools] Uncaught ${source}:`, err);
+  console.error(`[dod-studio] Uncaught ${source}:`, err);
 
   logFrontendEvent(`[error] Uncaught ${source}: ${message}\n${stack}`);
 

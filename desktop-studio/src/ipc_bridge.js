@@ -466,7 +466,7 @@ export async function revealInExplorer(path) {
 }
 
 /** Sweeps `<hl>/dod` for orphaned `*_preview.dem` bookmark previews (files
- *  that still carry their `.dodtools_preview` sidecar) left behind by prior
+ *  that still carry their `.dodstudio_preview` sidecar) left behind by prior
  *  capture sessions. `gameDir` is the configured hl.exe path. */
 export async function scanOrphanedPreviews(gameDir) {
   return invoke("scan_orphaned_previews", { gameDir })

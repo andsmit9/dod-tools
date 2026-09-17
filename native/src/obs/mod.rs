@@ -1,7 +1,7 @@
 //! Driving OBS Studio as an alternate capture path.
 //!
 //! See `docs/obs_alternate_capture.md` (#65). The design in one paragraph:
-//! OBS records the game window in real time while dod-tools tells it when each
+//! OBS records the game window in real time while dod-studio tells it when each
 //! block starts and stops. HLAE issues no `mirv_recordmovie` at all, so the
 //! engine simply plays back at `host_framerate 0` through the clip, and OBS
 //! writes a finished file with audio already muxed.

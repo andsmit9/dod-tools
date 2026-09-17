@@ -108,7 +108,7 @@ fn main() {
                     // Only an HLTV proxy's recording carries the director
                     // stream that drives the auto-director's camera.
                     //
-                    // Counting *any* svc_director is not enough: dod-tools
+                    // Counting *any* svc_director is not enough: dod-studio
                     // injects its own into previews of POV demos, so those
                     // misreported as HLTV. Its injections are only
                     // DRC_CMD_MESSAGE (0x06) and DRC_CMD_STUFFTEXT (0x0A) --

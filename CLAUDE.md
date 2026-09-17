@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) and offline IDE agen
 
 ## Project Overview
 
-`dod-tools` is a high-performance pipeline for capturing, patching, and analyzing **Day of Defeat 1.3** (GoldSrc engine) demo files (`.dem`). It drives **HLAE** (Half-Life Advanced Effects) and `hl.exe` headlessly to batch-record highlight clips out of recorded matches, transcodes the results via FFmpeg, and parses demos for match analytics (scoreboards, kills, chat, rounds). The active desktop application is a Tauri + Vite frontend (`desktop-studio/`).
+`dod-studio` is a high-performance pipeline for capturing, patching, and analyzing **Day of Defeat 1.3** (GoldSrc engine) demo files (`.dem`). It drives **HLAE** (Half-Life Advanced Effects) and `hl.exe` headlessly to batch-record highlight clips out of recorded matches, transcodes the results via FFmpeg, and parses demos for match analytics (scoreboards, kills, chat, rounds). The active desktop application is a Tauri + Vite frontend (`desktop-studio/`).
 
 ---
 

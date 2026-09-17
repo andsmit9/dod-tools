@@ -48,7 +48,7 @@ const BUNDLED_RELATIVE: &str = "bin/ffmpeg.exe";
 const HOOK_DLL: &str = "AfxHookGoldSrc.dll";
 
 /// The header `link` writes, and the marker `authored_by_us` looks for.
-const AUTHORED_MARKER: &str = "Written by dod-tools";
+const AUTHORED_MARKER: &str = "Written by dod-studio";
 
 /// What HLAE would find if it looked right now.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -309,8 +309,8 @@ fn write_link(hlae_exe: &Path, ffmpeg_exe: &Path) -> Result<PathBuf, LinkError> 
 /// now wondering where it came from.
 fn ini_body(ffmpeg_exe: &Path) -> String {
     format!(
-        "; Written by dod-tools so HLAE's mirv_movie_ffmpeg can find FFmpeg.\n\
-         ; Delete this file to undo it. dod-tools may rewrite a file carrying\n\
+        "; Written by dod-studio so HLAE's mirv_movie_ffmpeg can find FFmpeg.\n\
+         ; Delete this file to undo it. dod-studio may rewrite a file carrying\n\
          ; this header, and will never touch one that does not.\n\
          [Ffmpeg]\n\
          Path={}\n",
@@ -348,7 +348,7 @@ pub fn link_elevated(hlae_exe: &Path, ffmpeg_exe: &Path) -> Result<PathBuf, Link
 
     let ini = ffmpeg_dir(hlae_exe).ok_or(LinkError::NoInstall)?.join(INI_NAME);
 
-    let scratch = std::env::temp_dir().join("dodtools_hlae_ffmpeg");
+    let scratch = std::env::temp_dir().join("dodstudio_hlae_ffmpeg");
     std::fs::create_dir_all(&scratch).map_err(LinkError::Io)?;
     let staged = scratch.join(INI_NAME);
     std::fs::write(&staged, ini_body(ffmpeg_exe)).map_err(LinkError::Io)?;

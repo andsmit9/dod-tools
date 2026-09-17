@@ -135,7 +135,7 @@ fn main() {
         .filter(|e| {
             e.file_name()
                 .to_string_lossy()
-                .starts_with("dodtools_decalflush_")
+                .starts_with("dodstudio_decalflush_")
         })
         .count();
     if leftovers > 0 {

@@ -17,7 +17,7 @@ IMMUTABLE MILESTONES ARCHITECTURE RULES:
 
 ### Game Capture Pipeline
 - [x] Task: HLTV Active Frame Injection — Standalone `DRC_CMD_INEYE` frame injection implemented and verified in `native/src/patch/engine.rs` with dynamic `target_player_id` extraction.
-- [x] Task: Graceful Degradation for Clutch Clips — Update `builder.rs` to handle edge cases where a kill occurs inside the 3.0-second EOF danger zone. The patcher must gracefully sacrifice the post-roll and schedule the `DOD_TOOLS_EXIT_TRIGGER` exactly 5 ticks before the absolute final frame to ensure the highlight is captured without crashing the batch.
+- [x] Task: Graceful Degradation for Clutch Clips — Update `builder.rs` to handle edge cases where a kill occurs inside the 3.0-second EOF danger zone. The patcher must gracefully sacrifice the post-roll and schedule the `DOD_STUDIO_EXIT_TRIGGER` exactly 5 ticks before the absolute final frame to ensure the highlight is captured without crashing the batch.
 - [x] Feature: Config Injection — Ensure the engine dynamically injects `+exec movie.cfg` into the HLAE command line arguments to preserve custom capture framerates and HUD settings.
 - [x] Task: Long Demo Validation — Validate capture sequence for 30+ minute demos.
 - [x] Task: Packet Audit — Injected a strict 2MB bounds guard into the binary scanner to prevent memory overruns and alignment drift on extended demos.
@@ -114,7 +114,7 @@ IMMUTABLE MILESTONES ARCHITECTURE RULES:
 - [x] Feature: Daisy-Chain - Continuous Batch Processing — GoldSrc ignores `quit` commands in demo streams. To solve this and reduce process launch overhead, the engine will process demos in a single continuous batch without closing the game.
 - [x] Feature: Daisy-Chain - Stateful Patcher Routing — The patcher must accept `next_demo_filename` as state.
 - [x] Feature: Daisy-Chain - Chaining Command — If a next demo exists, inject `mirv_recordmovie_stop; playdemo <next_demo>`.
-- [x] Feature: Daisy-Chain - Completion Command — If it is the last demo, inject `mirv_recordmovie_stop; disconnect; clear; echo "[dod-tools] BATCH COMPLETE"`.
+- [x] Feature: Daisy-Chain - Completion Command — If it is the last demo, inject `mirv_recordmovie_stop; disconnect; clear; echo "[dod-studio] BATCH COMPLETE"`.
 - [x] Task: Daisy-Chain - 40-Character Truncation Limit — Patched `.dem` filenames must be strictly truncated or hashed before chaining so the 1998 engine buffer doesn't clip them.
 - [x] Task: Primer Demo - First-Load Black Map Bug — To fix the GoldSrc first-load black map bug, the UI/engine must duplicate the first demo in the batch and save it as `primer_ptch.dem`.
 - [x] Task: Primer Demo - Asset Pre-Caching — The patcher will strip all killstreaks from `primer_ptch.dem` and inject `playdemo <first_real_demo>` immediately after the `DemoStart` frame to pre-cache map assets.

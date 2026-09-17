@@ -76,7 +76,7 @@ for this purpose:
 // Implement Global Breadcrumb Loop
 let mut step = 0;
 while step < total_demo_frames {
-    scheduled_commands.push((step, format!("echo \"[dod-tools] BREADCRUMB - Tick {}\"", step)));
+    scheduled_commands.push((step, format!("echo \"[dod-studio] BREADCRUMB - Tick {}\"", step)));
     step += crate::patch::BREADCRUMB_INTERVAL_TICKS;
 }
 ```

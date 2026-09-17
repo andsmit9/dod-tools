@@ -67,7 +67,7 @@ fn find_tick_forwards(start_frame: usize, gap_seconds: f32, frame_times: &[f32],
     last as i32
 }
 
-const LOG_TAG: &str = "[dod-tools]";
+const LOG_TAG: &str = "[dod-studio]";
 
 /// How far ahead of the record start `stopsound` fires, to flush audio the
 /// fast-forward left in a bad state. Clamped down to the pre-roll when the
@@ -121,7 +121,7 @@ fn build_safe_echos(tick: i32, message: &str) -> Vec<(i32, String)> {
         let prefix = if is_first {
             format!("{} ", LOG_TAG)
         } else {
-            "[dodtools] ->".to_string()
+            "[dodstudio] ->".to_string()
         };
         
         let test_message = if current_chunk.is_empty() {
@@ -163,7 +163,7 @@ fn build_safe_echos(tick: i32, message: &str) -> Vec<(i32, String)> {
         let prefix = if is_first {
             format!("{} ", LOG_TAG)
         } else {
-            "[dodtools] ->".to_string()
+            "[dodstudio] ->".to_string()
         };
         let cmd = format!("echo \"{}{}\"", prefix, current_chunk);
         result.push((current_tick, cmd));
@@ -207,7 +207,7 @@ pub fn final_init_commands(config: &PatcherConfig) -> Vec<String> {
     // `mirv_movie_fps` above is inert on this path — nothing reads it. What
     // OBS actually records is however fast the engine renders, so that rate
     // has to be pinned to the same `obs_capture_fps` OBS's own canvas is set
-    // to (obs::provision::ensure_dod_tools_setup), or the two drift against
+    // to (obs::provision::ensure_dod_studio_setup), or the two drift against
     // each other. `fps_override 1` first: GoldSrc's default `fps_max`
     // ceiling (~100) is below what obs_capture_fps is commonly set to, and
     // `fps_max` alone is silently clamped under that ceiling without it.
@@ -506,13 +506,13 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
     };
 
     // Remove stale config from dod_dir
-    let _ = std::fs::remove_file(dod_dir.join("dodtools_helper.cfg"));
-    let _ = std::fs::remove_file(dod_dir.join("dodtools_capture_done.cfg"));
+    let _ = std::fs::remove_file(dod_dir.join("dodstudio_helper.cfg"));
+    let _ = std::fs::remove_file(dod_dir.join("dodstudio_capture_done.cfg"));
     let _ = std::fs::remove_file(dod_dir.join("dod_quit.cfg"));
     if let Ok(entries) = std::fs::read_dir(&dod_dir) {
         for entry in entries.flatten() {
             let filename = entry.file_name().to_string_lossy().to_string();
-            if filename.starts_with("dodtools_chain_") && filename.ends_with(".cfg") {
+            if filename.starts_with("dodstudio_chain_") && filename.ends_with(".cfg") {
                 let _ = std::fs::remove_file(entry.path());
             }
         }
@@ -552,7 +552,7 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
     }
     
     helper_cfg_content.push_str(&format!(
-        "# dodtools_helper.cfg\n# Created by: dod_tools.exe v{}\n# Date: {}\n\n",
+        "# dodstudio_helper.cfg\n# Created by: dod_studio.exe v{}\n# Date: {}\n\n",
         crate::VERSION,
         date_time
     ));
@@ -561,7 +561,7 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
     // is passed on every launch) — cheap enough to leave in permanently rather than
     // re-add it every time this ordering question comes up again. See
     // docs/goldsrc_dod_quirks.md's Command Precedence entry.
-    helper_cfg_content.push_str("echo dodtools_helper.cfg exec'd here\n\n");
+    helper_cfg_content.push_str("echo dodstudio_helper.cfg exec'd here\n\n");
 
     helper_cfg_content.push_str("# Global aliases\n");
     helper_cfg_content.push_str("alias sys_autodir \"spec_autodirector 1\"\n");
@@ -591,9 +591,9 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
         helper_cfg_content.push_str("alias sys_record_stop \"mirv_recordmovie_stop\"\n");
     } else {
         helper_cfg_content.push_str("alias sys_record_start \"stopsound\"\n");
-        helper_cfg_content.push_str("alias sys_record_stop \"echo [dod-tools] OBS_MODE_NO_HLAE_STOP\"\n");
+        helper_cfg_content.push_str("alias sys_record_stop \"echo [dod-studio] OBS_MODE_NO_HLAE_STOP\"\n");
     }
-    helper_cfg_content.push_str("alias sys_capture_done_path \"mirv_movie_filename DOD_TOOLS_EXIT_TRIGGER; mirv_recordmovie_start; mirv_recordmovie_stop\"\n");
+    helper_cfg_content.push_str("alias sys_capture_done_path \"mirv_movie_filename DOD_STUDIO_EXIT_TRIGGER; mirv_recordmovie_start; mirv_recordmovie_stop\"\n");
 
     // Direct-to-video (docs/direct_to_video_capture.md), driven by the capture-
     // mode toggle. The probe that introduced this settled all four of its open
@@ -705,9 +705,9 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
 
         if let Some(first_streak) = streaks.first() {
             let match_tick = first_streak.match_start_tick.unwrap_or(0);
-            director_events.push((match_tick, "echo [dod-tools] MATCH_START".to_string()));
+            director_events.push((match_tick, "echo [dod-studio] MATCH_START".to_string()));
             let demo_end_tick = total_demo_frames;
-            director_events.push((demo_end_tick, "echo [dod-tools] DEMO_END".to_string()));
+            director_events.push((demo_end_tick, "echo [dod-studio] DEMO_END".to_string()));
         }
         director_events.sort_by_key(|e| e.0);
 
@@ -1141,7 +1141,7 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
         while step < total_demo_frames {
             scheduled_commands.push((
                 step, 
-                format!("echo \"[dod-tools] BREADCRUMB - Tick {}\"", step)
+                format!("echo \"[dod-studio] BREADCRUMB - Tick {}\"", step)
             ));
             step += crate::patch::BREADCRUMB_INTERVAL_TICKS;
         }
@@ -1194,11 +1194,11 @@ pub fn build_batch_queue(raw_streaks: Vec<CaptureStreak>, config: &PatcherConfig
         }
     }
 
-    // Write dodtools_helper.cfg to dod_dir
+    // Write dodstudio_helper.cfg to dod_dir
     if !dod_dir.exists() {
         std::fs::create_dir_all(&dod_dir)?;
     }
-    let cfg_path = dod_dir.join("dodtools_helper.cfg");
+    let cfg_path = dod_dir.join("dodstudio_helper.cfg");
     std::fs::write(&cfg_path, helper_cfg_content)?;
 
     // Final per-drive headroom for every drive this batch actually touches,
@@ -1250,7 +1250,7 @@ impl Drop for WorkspaceGuard {
                     log::warn!("[WorkspaceGuard::drop] Failed to remove pool junction {:?}: {}", junction, e);
                 }
         }
-        // Signal dirs (DOD_TOOLS_EXIT_TRIGGER) are directories, not files.
+        // Signal dirs (DOD_STUDIO_EXIT_TRIGGER) are directories, not files.
         // Use remove_dir_all; silently ignore NotFound, log anything else.
         if let Err(e) = std::fs::remove_dir_all(&self.exit_trigger)
             && e.kind() != std::io::ErrorKind::NotFound {
@@ -1396,10 +1396,10 @@ pub fn build_preview_patch_jobs(
 
         if let Some(first_streak) = streaks.first() {
             let match_frame_idx = 0; // Float time unavailable for match start
-            director_events.push((match_frame_idx, "echo [dod-tools] MATCH_START".to_string()));
+            director_events.push((match_frame_idx, "echo [dod-studio] MATCH_START".to_string()));
             let total_demo_frames = if first_streak.total_demo_frames > 0 { first_streak.total_demo_frames } else { first_streak.frame_times.len() as i32 };
             let demo_end_tick = total_demo_frames;
-            director_events.push((demo_end_tick, "echo [dod-tools] DEMO_END".to_string()));
+            director_events.push((demo_end_tick, "echo [dod-studio] DEMO_END".to_string()));
         }
         director_events.sort_by_key(|e| e.0);
 
@@ -1656,12 +1656,12 @@ mod tests {
         let expected_dod_dir = std::path::Path::new(&config.game_path).parent().unwrap().join("dod");
 
         let primer = &jobs[0];
-        assert_eq!(primer.output_demo, expected_dod_dir.join("dodtools_primer.dem"));
+        assert_eq!(primer.output_demo, expected_dod_dir.join("dodstudio_primer.dem"));
         assert_eq!(primer.streaks.len(), 0);
 
         let job = &jobs[1];
         assert_eq!(job.source_demo, "demo1.dem");
-        assert_eq!(job.output_demo, expected_dod_dir.join("dodtools_chain_01.dem"));
+        assert_eq!(job.output_demo, expected_dod_dir.join("dodstudio_chain_01.dem"));
         assert_eq!(job.streaks.len(), 2);
         assert_eq!(job.streaks[0].start_tick, 1000);
         assert_eq!(job.streaks[0].end_tick, 1500); // Merged 1000-1200 and 1300-1500
@@ -1681,15 +1681,15 @@ mod tests {
         // the naming the helper cfg's _route_N alias writes to.
         assert_eq!(job.blocks[0].start_tick, 1000);
         assert_eq!(job.blocks[0].end_tick, 1500);
-        assert_eq!(job.blocks[0].demo_name, "dodtools_chain_01");
+        assert_eq!(job.blocks[0].demo_name, "dodstudio_chain_01");
         assert!(
-            job.blocks[0].take_folder.ends_with("dodtools_chain_01_b0"),
-            "expected take folder to end with dodtools_chain_01_b0, got {:?}",
+            job.blocks[0].take_folder.ends_with("dodstudio_chain_01_b0"),
+            "expected take folder to end with dodstudio_chain_01_b0, got {:?}",
             job.blocks[0].take_folder
         );
         assert!(
-            job.blocks[0].take_key.ends_with("/dodtools_chain_01_b0"),
-            "expected take key to end with /dodtools_chain_01_b0, got {:?}",
+            job.blocks[0].take_key.ends_with("/dodstudio_chain_01_b0"),
+            "expected take key to end with /dodstudio_chain_01_b0, got {:?}",
             job.blocks[0].take_key
         );
 
@@ -1701,7 +1701,7 @@ mod tests {
     /// from `demo_name`, and `engine.rs` silently truncates anything at or over
     /// `MAX_CONSOLE_CMD_SAFE_LEN` when it writes the ConsoleCommand frame -- a
     /// too-long name would not fail, it would just stop working. The
-    /// `dodtools_` prefix (#197) made all of these 9 bytes longer, so pin it.
+    /// `dodstudio_` prefix (#197) made all of these 9 bytes longer, so pin it.
     #[test]
     fn every_injected_command_stays_under_the_goldsrc_cbuf_limit() {
         let mut config = PatcherConfig::default();
@@ -1855,7 +1855,7 @@ mod tests {
         let dod_dir = exit_trigger.parent().unwrap().join("dod");
         std::fs::create_dir_all(&dod_dir).unwrap();
         std::fs::create_dir_all(&exit_trigger).unwrap();
-        let chain_demo = dod_dir.join("dodtools_chain_01.dem");
+        let chain_demo = dod_dir.join("dodstudio_chain_01.dem");
         std::fs::write(&chain_demo, b"fake demo bytes").unwrap();
 
         {
@@ -1873,7 +1873,7 @@ mod tests {
 
         assert!(
             !chain_demo.exists(),
-            "dodtools_chain_01.dem should have been removed by WorkspaceGuard::drop with auto_clear_temp_demos on"
+            "dodstudio_chain_01.dem should have been removed by WorkspaceGuard::drop with auto_clear_temp_demos on"
         );
 
         let _ = std::fs::remove_dir_all(&dod_dir);
@@ -2635,8 +2635,8 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
-        std::fs::write(dod.join("dodtools_primer.dem"), b"x").unwrap();
-        std::fs::write(dod.join("dodtools_chain_01.dem"), b"x").unwrap();
+        std::fs::write(dod.join("dodstudio_primer.dem"), b"x").unwrap();
+        std::fs::write(dod.join("dodstudio_chain_01.dem"), b"x").unwrap();
 
         {
             let _guard = WorkspaceGuard {
@@ -2651,8 +2651,8 @@ mod tests {
             };
         }
 
-        assert!(dod.join("dodtools_primer.dem").exists());
-        assert!(dod.join("dodtools_chain_01.dem").exists());
+        assert!(dod.join("dodstudio_primer.dem").exists());
+        assert!(dod.join("dodstudio_chain_01.dem").exists());
 
         let _ = std::fs::remove_dir_all(&root);
     }

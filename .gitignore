@@ -9,7 +9,7 @@ scratch/
 !scratch/debug.rs
 
 # === Project Configuration & Caches ===
-.dod-tools-cache.json
+.dod-studio-cache.json
 settings.json
 hlcr_config.json
 /demo_deduplication_report.md

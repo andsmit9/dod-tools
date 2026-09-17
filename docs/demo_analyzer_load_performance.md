@@ -359,7 +359,7 @@ above — still accurate for a cold/cache-miss parse, since the benchmark
 exercises the parse path directly and doesn't go through the Tier 1a cache.
 
 **Tier 1a cache, now that it exists:** open a demo in the Demo Analyzer tab,
-check `%APPDATA%\dod-tools\analyzer_cache\v1\` populates with a
+check `%APPDATA%\dod-studio\analyzer_cache\v1\` populates with a
 `<16-hex-digit>.json` file, then re-open the same demo (or re-select it from
 the sidebar) and confirm it's near-instant with no progress bar — a cache hit
 skips `progress_cb` entirely, so the absence of the Tier 1b progress UI on a

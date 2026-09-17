@@ -1,6 +1,6 @@
 # QA Checklists
 
-Interactive, clickable-checkbox test checklists for DoD Tools Studio. One
+Interactive, clickable-checkbox test checklists for DoD Studio. One
 `.json` file per checklist in this folder — drop a new one in and it just
 shows up, no rebuild step.
 

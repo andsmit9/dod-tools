@@ -47,7 +47,7 @@ Produces `target/i686-pc-windows-msvc/release/dodstudio_goldsrc_hooks.dll` and
    `inject.exe` only delivers the DLL, it doesn't set environment variables
    for a process that's already running.
 4. `inject.exe <pid> path\to\dodstudio_goldsrc_hooks.dll`
-5. Check `%APPDATA%\dod-tools\logs\dodstudio_goldsrc_hooks.log` for its own diagnostics (never pops a
+5. Check `%APPDATA%\dod-studio\logs\dodstudio_goldsrc_hooks.log` for its own diagnostics (never pops a
    dialog -- this is meant to run inside an unattended capture pipeline).
 
 ## Status

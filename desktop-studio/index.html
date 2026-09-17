@@ -5,7 +5,7 @@
     <link rel="icon" type="image/png" href="/src/icon.png" />
     <link rel="stylesheet" href="/src/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title data-str="NAV.APP_TITLE">DoD Tools Studio</title>
+    <title data-str="NAV.APP_TITLE">DoD Studio</title>
     <script type="module" src="/src/main.js" defer></script>
   </head>
 
@@ -16,7 +16,7 @@
       <header id="top-navbar">
         <div class="nav-brand">
           <img src="/src/icon.png" alt="" class="brand-logo" />
-          <span class="brand-title" data-str="NAV.APP_TITLE">DoD Tools Studio</span>
+          <span class="brand-title" data-str="NAV.APP_TITLE">DoD Studio</span>
           <!-- Custom in-app dropdowns, not a native OS menu bar — Windows
                renders native menus with system chrome and offers no API to
                recolor them (see #122), so this is styled like the rest of
@@ -299,7 +299,7 @@
               </div>
 
               <!-- Shown only in OBS mode. Testing the connection provisions
-                   dod-tools' own [DoD-Tools] profile/scene (creating or
+                   dod-studio' own [DoD-Studio] profile/scene (creating or
                    repairing it as needed) and switches into it — see
                    obs::provision. It refuses first if OBS is already
                    recording or streaming under something else, so it can
@@ -311,7 +311,7 @@
               <div id="obs-settings-group" style="display: none;">
                 <h4 data-str="CAPTURE_CONFIG.OBS_SECTION_TITLE">OBS Connection</h4>
                 <p class="setting-hint" data-str="CAPTURE_CONFIG.OBS_PROVISION_HINT">
-                  dod-tools manages its own OBS profile/scene ([DoD-Tools]) — your own setup is never touched.
+                  dod-studio manages its own OBS profile/scene ([DoD-Studio]) — your own setup is never touched.
                 </p>
                 <!-- Spawn-and-forget, same as the standalone "Launch Game
                      (HLAE)" button — no lifecycle tracking, since OBS is
@@ -943,7 +943,7 @@
     </div>
 
     <!-- Clear Previews — audits <hl>/dod for orphaned *_preview.dem bookmark
-         previews (identified by their hidden .dodtools_preview sidecar) and
+         previews (identified by their hidden .dodstudio_preview sidecar) and
          lets the user purge them. -->
     <div id="clear-previews-modal" class="modal" style="display: none;">
       <div class="modal-content" style="max-width: 640px; padding: 20px;">
@@ -1028,7 +1028,7 @@
     <div id="about-modal" class="modal" style="display: none;">
       <div class="modal-content" style="max-width: 420px; padding: 20px; text-align: center;">
         <img src="/src/icon.png" alt="" style="width: 64px; height: 64px; border-radius: 8px; margin-bottom: 8px;" />
-        <h2 data-str="NAV.APP_TITLE">DoD Tools Studio</h2>
+        <h2 data-str="NAV.APP_TITLE">DoD Studio</h2>
         <p id="about-modal-version" class="status-text" style="margin: 4px 0 12px;"></p>
         <p data-str="ABOUT_MODAL.BLURB">A capture, patching, and analytics pipeline for Day of Defeat 1.3 demos — batch-records highlight clips through HLAE and parses matches for scoreboards, kills, chat, and rounds.</p>
         <p style="margin-top: 12px; color: var(--text-muted);" data-str="ABOUT_MODAL.CREDIT">Built by ccoventry</p>

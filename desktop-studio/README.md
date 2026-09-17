@@ -1,6 +1,6 @@
 # desktop-studio
 
-The active `dod-tools` desktop app — Tauri v2 backend (`src-tauri/`) + Vite/vanilla-JS
+The active `dod-studio` desktop app — Tauri v2 backend (`src-tauri/`) + Vite/vanilla-JS
 frontend (`src/`, one module per pane: `capture_pane.js`, `render_pane.js`,
 `analyzer_pane.js`, `auditor_pane.js`).
 

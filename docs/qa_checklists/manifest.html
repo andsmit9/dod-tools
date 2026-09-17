@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>DoD Tools QA Manifest</title>
+<title>DoD Studio QA Manifest</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
@@ -326,7 +326,7 @@
 <body>
 <div class="wrap">
   <div class="shell-head">
-    <div class="eyebrow">DoD Tools Studio</div>
+    <div class="eyebrow">DoD Studio</div>
     <h1>QA Manifest</h1>
   </div>
 
@@ -360,7 +360,7 @@
     return str.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 40);
   }
 
-  function storageKeyFor(id) { return "dod-tools-checklist-v1:" + id; }
+  function storageKeyFor(id) { return "dod-studio-checklist-v1:" + id; }
 
   function loadState(id) {
     try { return JSON.parse(localStorage.getItem(storageKeyFor(id)) || "{}"); }
@@ -410,7 +410,7 @@
     });
 
   function init(CHECKLISTS) {
-    var ACTIVE_KEY = "dod-tools-qa-manifest-active";
+    var ACTIVE_KEY = "dod-studio-qa-manifest-active";
     var activeId = null;
     try { activeId = localStorage.getItem(ACTIVE_KEY); } catch (e) { /* ignore */ }
     if (!CHECKLISTS.some(function (c) { return c.id === activeId; })) {

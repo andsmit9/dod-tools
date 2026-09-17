@@ -2000,7 +2000,7 @@ const SCRATCH_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(
 
 /// Filename prefix identifying a flush scratch demo, so the sweep can recognise
 /// its own leavings and nothing else.
-const SCRATCH_PREFIX: &str = "dodtools_decalflush_";
+const SCRATCH_PREFIX: &str = "dodstudio_decalflush_";
 
 fn sweep_stale_scratch(dir: &std::path::Path) {
     let Ok(entries) = std::fs::read_dir(dir) else {
@@ -2700,7 +2700,7 @@ mod tests {
 
     fn block(block_index: usize, record_start_tick: i32, record_stop_tick: i32) -> CaptureBlock {
         CaptureBlock {
-            demo_name: "dodtools_chain_01".to_string(),
+            demo_name: "dodstudio_chain_01".to_string(),
             block_index,
             drive_index: 0,
             take_folder: std::path::PathBuf::from("take"),

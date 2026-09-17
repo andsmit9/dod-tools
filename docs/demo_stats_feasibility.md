@@ -14,14 +14,14 @@ you; if you're resuming the stats/league work, start here instead of re-deriving
 A friend runs the server/stats infrastructure for the KTP DoD 1.3 league (ktpleague.gg,
 HLStatsX + custom AMXX plugins) and needs to backfill match stats for seasons 1–9, where
 demos are the only surviving record. The question: how much of an HLStatsX-style
-scoreboard can be reconstructed from `.dem` files alone, using `dod-tools`.
+scoreboard can be reconstructed from `.dem` files alone, using `dod-studio`.
 
 **The deliverable is a private Claude Artifact, not a file in this repo:**
 `https://claude.ai/code/artifact/0481832b-dc0a-4726-baf3-e8be34fc55f5`
 
 That artifact ("What the demo knows") is the actual spec — column-by-column coverage,
 wire-format reference for every relevant DoD 1.3 user message, nine aggregation rules
-with pseudocode, a `dod-tools` readiness assessment, and a HLStatsX join strategy. It is
+with pseudocode, a `dod-studio` readiness assessment, and a HLStatsX join strategy. It is
 the thing to read and update, not this file. This file just anchors it in the repo so a
 fresh session (or a different AI) knows the artifact exists and what's true about the
 codebase as of the last time it was checked against reality.
@@ -48,7 +48,7 @@ There's also a stale standalone copy at `C:\Users\chris\Downloads\ktp-demo-stats
   HLTV subset specifically, not the full corpus — flagged as a correction after an earlier
   draft mismeasured it with too wide a correlation window (27.4% → correct 19.8%).
 
-## What's blocking dod-tools from actually producing these stats
+## What's blocking dod-studio from actually producing these stats
 
 The `analysis` crate's message filter (`is_relevant_message` in `analysis/src/lib.rs`,
 ~21-name allowlist) silently drops `CapMsg`, `InitObj`, `SetObj`, `StartProg`,
@@ -65,9 +65,9 @@ CLI entry point) is in the artifact's "What would make it usable for the league"
 - **Fixed a real localization bug** (`analysis/src/localization.rs`): `translate_key`
   prepended a `#` sigil on every lookup but never stripped one on insert, so any key
   stored bare (which is all 1,190 of them — `dod_english.txt`, `valve_english.txt`,
-  `gameui_english.txt`, and now `dod_tools_english.txt` after this fix) silently failed
+  `gameui_english.txt`, and now `dod_studio_english.txt` after this fix) silently failed
   to resolve. Fixed by normalizing (`trim_start_matches('#').to_lowercase()`) on both
-  insert and lookup. `localizations/dod_tools_english.txt` had its 327 keys stripped of
+  insert and lookup. `localizations/dod_studio_english.txt` had its 327 keys stripped of
   their `#` prefix to match the convention every other file already used. See
   `docs/staging_lessons.md`'s "Localization Key Canonicalization" entry.
 - **Brought `main` current** — it was ~300 commits behind `dev` and still advertised a

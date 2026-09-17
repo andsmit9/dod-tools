@@ -266,7 +266,7 @@ function describeProblemPaths(problems) {
  * Start Capture Batch's own pre-flight below. Deliberately NOT run at app
  * startup even when OBS mode is already the persisted choice — OBS is the
  * user's own program, not expected to already be running just because
- * dod-tools opened, same as HLAE.
+ * dod-studio opened, same as HLAE.
  *
  * `auto` skips the button disable/relabel churn (there was no click to
  * originate it) but still populates the same status panel — quiet the same
@@ -316,7 +316,7 @@ export async function runObsConnectionTest({ auto = false } = {}) {
  * Warnings are shown rather than swallowed: the canvas mismatch in particular
  * costs most of the picture's detail and has no visible symptom, so it would
  * otherwise be found only by comparing a finished clip against expectations.
- * Should be rare now that `obs_test_connection` provisions dod-tools' own
+ * Should be rare now that `obs_test_connection` provisions dod-studio' own
  * profile/scene itself rather than validating whatever the user picked, but
  * still worth surfacing if OBS itself refuses one of those settings.
  */
@@ -334,7 +334,7 @@ function renderObsReport(report) {
 
   const lines = [
     STRINGS.CAPTURE_CONFIG.obsConnectedSummary(report.obs_version, report.websocket_version),
-    // Read-only — dod-tools always targets its own fixed profile/scene now,
+    // Read-only — dod-studio always targets its own fixed profile/scene now,
     // there is nothing here for the user to pick.
     STRINGS.CAPTURE_CONFIG.obsUsingSummary(report.current_profile, report.current_scene),
     STRINGS.CAPTURE_CONFIG.obsCanvasSummary(report.canvas, report.output, report.fps),
@@ -361,7 +361,7 @@ const OBS_LAUNCH_RETRY_DELAY_MS = 2000;
 
 /**
  * Launches OBS (via the configured "OBS Path") and retries the connection —
- * which also provisions dod-tools' own profile/scene, same as any other
+ * which also provisions dod-studio' own profile/scene, same as any other
  * check — while it starts up. Used by Start Capture Batch's pre-flight below
  * so OBS doesn't have to already be open (much like HLAE doesn't) — the
  * batch can bring it up itself. Returns whether OBS ended up reachable.
@@ -493,7 +493,7 @@ export async function refreshLaunchGuard(state) {
   // blocking: the click handler launches OBS and retries the connection
   // itself when it finds this state, so disabling the button here would
   // deny that recovery path a first click ever reaching it — OBS is not
-  // expected to already be open just because dod-tools switched into OBS
+  // expected to already be open just because dod-studio switched into OBS
   // mode or even opened at all.
   const obsMode = document.querySelector('#config-capture-mode')?.value === 'obs';
   const obsNotReady = obsMode && obsConnectionChecked() && !isObsConnected();

@@ -104,7 +104,7 @@ function obsSettingsFromForm() {
  * The capture engine stops OBS on every exit path the process lives to run,
  * but a panic (release builds abort rather than unwind), a force-quit and a
  * power cut all leave nothing behind to run anything. OBS simply keeps
- * recording — into a folder only dod-tools would ever name — until the drive
+ * recording — into a folder only dod-studio would ever name — until the drive
  * fills. This is the only place that can notice.
  *
  * Silent unless there is something to act on: OBS not running is the ordinary
@@ -608,7 +608,7 @@ window.addEventListener("DOMContentLoaded", async () => {
       applyCaptureModeUI();
       // Deliberately NOT checked here at startup — OBS is the user's own
       // program and, like HLAE, is not expected to already be running just
-      // because dod-tools opened. The connectivity check runs when actively
+      // because dod-studio opened. The connectivity check runs when actively
       // switching into OBS mode below, and again as Start Capture Batch's
       // own pre-flight (capture_pane.js) — both are moments the user is
       // actually about to use it, unlike app launch.

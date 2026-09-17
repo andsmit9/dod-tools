@@ -94,7 +94,7 @@ pub fn check(cfg: &ObsConfig) -> Result<OrphanReport, ObsError> {
 /// Stops an orphaned recording and folds its file into the take folder.
 ///
 /// Refuses anything that does not pass `looks_like_ours`, so a user who
-/// happened to be recording something of their own when they opened dod-tools
+/// happened to be recording something of their own when they opened dod-studio
 /// keeps their recording.
 pub fn recover(cfg: &ObsConfig) -> Result<Option<PathBuf>, ObsError> {
     let mut client = ObsClient::connect(&cfg.address(), &cfg.password)?;
@@ -107,7 +107,7 @@ pub fn recover(cfg: &ObsConfig) -> Result<Option<PathBuf>, ObsError> {
         return Err(ObsError::Request {
             request: "StopRecord".into(),
             detail: format!(
-                "OBS is recording into {directory}, which is not a dod-tools take folder. \
+                "OBS is recording into {directory}, which is not a dod-studio take folder. \
                  Leaving it alone."
             ),
         });
@@ -128,10 +128,10 @@ mod tests {
     #[test]
     fn recognises_a_take_folder() {
         assert!(looks_like_ours(Path::new(
-            r"D:\dod-tools\exports\dodtools_chain_01_b0\take0000\all"
+            r"D:\dod-studio\exports\dodstudio_chain_01_b0\take0000\all"
         )));
         assert!(looks_like_ours(Path::new(
-            "/mnt/exports/dodtools_chain_01_b0/take0000/all"
+            "/mnt/exports/dodstudio_chain_01_b0/take0000/all"
         )));
     }
 

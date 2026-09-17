@@ -32,7 +32,7 @@
 # BOM. `text=auto` would already detect these as binary via their NUL bytes,
 # but state it explicitly rather than trusting a heuristic: a mangled one of
 # these fails at runtime with wrong strings, not at build time where it would
-# be noticed. localizations/dod_tools_english.txt is ours and is UTF-8 — it
+# be noticed. localizations/dod_studio_english.txt is ours and is UTF-8 — it
 # deliberately does not appear here.
 localizations/dod_english.txt     binary
 localizations/gameui_english.txt  binary

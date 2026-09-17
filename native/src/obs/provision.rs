@@ -1,18 +1,18 @@
-//! Auto-provisions and repairs dod-tools' own OBS profile/scene/sources.
+//! Auto-provisions and repairs dod-studio' own OBS profile/scene/sources.
 //!
-//! **Why a dedicated, dod-tools-owned profile and scene rather than letting
+//! **Why a dedicated, dod-studio-owned profile and scene rather than letting
 //! the user point at their own.** An earlier design had scene/profile pickers
 //! — dropdowns over whatever the user already had — and switched into
 //! whichever one was chosen for the batch. That still left the batch
 //! rewriting *that* profile's canvas/output resolution and recording
 //! directory out from under it, which is exactly the kind of clobbering
 //! `cfg_scan.rs`'s "detect and warn, never write" policy exists to prevent
-//! for the game's own `.cfg` files. A profile/scene dod-tools creates and
+//! for the game's own `.cfg` files. A profile/scene dod-studio creates and
 //! names itself sidesteps the whole problem: nothing it writes here can ever
 //! touch a setting or source the user actually built for something else.
 //!
 //! **Re-verified and repaired on every connect, not created once.** Nothing
-//! stops a user opening the dod-tools profile/scene in OBS's own UI and
+//! stops a user opening the dod-studio profile/scene in OBS's own UI and
 //! poking around — a setting drifting back is corrected the next time this
 //! runs rather than trusted to have stayed put.
 //!
@@ -29,13 +29,13 @@ use serde_json::json;
 use super::client::{ObsClient, ObsError};
 use crate::log_markdown;
 
-/// The profile dod-tools owns. Never the user's own — see module docs.
-pub const PROFILE_NAME: &str = "[DoD-Tools]";
-/// The scene dod-tools owns, inside whatever scene collection is current.
+/// The profile dod-studio owns. Never the user's own — see module docs.
+pub const PROFILE_NAME: &str = "[DoD-Studio]";
+/// The scene dod-studio owns, inside whatever scene collection is current.
 /// Deliberately not a dedicated scene collection of its own — a collection is
 /// the coarser "which show am I running" concept; adding one scene to
 /// whatever the user already has open is the smaller, less disruptive move.
-pub const SCENE_NAME: &str = "[DoD-Tools] Capture";
+pub const SCENE_NAME: &str = "[DoD-Studio] Capture";
 // Bracket-prefixed to match PROFILE_NAME/SCENE_NAME's convention, and to
 // keep these from colliding with a source someone already made by hand —
 // source names are global across a whole scene collection, not scoped to
@@ -43,8 +43,8 @@ pub const SCENE_NAME: &str = "[DoD-Tools] Capture";
 // manual setup would already be using. ensure_scene_item below still covers
 // a collision if one somehow happens anyway (reuses/re-places the existing
 // source rather than failing), this just makes it far less likely to.
-const GAME_CAPTURE_SOURCE: &str = "[DoD-Tools] Game Capture";
-const GAME_AUDIO_SOURCE: &str = "[DoD-Tools] Game Audio";
+const GAME_CAPTURE_SOURCE: &str = "[DoD-Studio] Game Capture";
+const GAME_AUDIO_SOURCE: &str = "[DoD-Studio] Game Audio";
 /// `title:class:executable` — DoD 1.3's hl.exe window, confirmed empirically
 /// (see module docs). If a future engine/launcher build changes any of the
 /// three, this stops matching and needs re-capturing the same way.
@@ -58,7 +58,7 @@ pub struct ProvisionResult {
     pub previous_scene: Option<String>,
 }
 
-/// Ensures the dod-tools-owned profile, scene, sources, video settings and
+/// Ensures the dod-studio-owned profile, scene, sources, video settings and
 /// mute state all exist and are correct — creating anything missing,
 /// repairing anything drifted — then switches into the profile and scene.
 ///
@@ -71,7 +71,7 @@ pub struct ProvisionResult {
 /// Callers must call `ObsClient::refuse_if_busy` first — this function
 /// assumes that's already been checked and switches live state
 /// unconditionally.
-pub fn ensure_dod_tools_setup(
+pub fn ensure_dod_studio_setup(
     client: &mut ObsClient,
     width: i32,
     height: i32,
@@ -152,7 +152,7 @@ fn ensure_game_capture_source(
     }
     ensure_scene_item(client, GAME_CAPTURE_SOURCE, existed)?;
     // Best-effort: a canvas already matching the game's resolution (set just
-    // above, in ensure_dod_tools_setup) makes this a no-op in practice, and a
+    // above, in ensure_dod_studio_setup) makes this a no-op in practice, and a
     // source that's now in the scene is worth more than failing provisioning
     // over its bounding box specifically.
     if let Ok(item_id) = client.scene_item_id(SCENE_NAME, GAME_CAPTURE_SOURCE) {
@@ -180,7 +180,7 @@ fn ensure_game_audio_source(client: &mut ObsClient) -> Result<(), ObsError> {
 /// obs-websocket's model, so `create_input` above never ran for one, and
 /// never added it to *this* scene). Confirmed necessary, not theoretical: an
 /// input matching one of these exact names from an earlier manual setup
-/// left `[DoD-Tools] Capture` created with no sources in it at all, since
+/// left `[DoD-Studio] Capture` created with no sources in it at all, since
 /// `set_input_settings` repairs a global input's settings but places it
 /// nowhere.
 fn ensure_scene_item(client: &mut ObsClient, source: &str, existed: bool) -> Result<(), ObsError> {

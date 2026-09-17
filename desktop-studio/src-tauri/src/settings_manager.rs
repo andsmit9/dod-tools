@@ -248,12 +248,10 @@ impl Default for AppSettings {
 }
 
 pub fn settings_path() -> PathBuf {
-    let config_dir = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = config_dir.join("dod-tools");
-    if let Err(e) = fs::create_dir_all(&dir) {
-        log::warn!("Failed to create settings directory {:?}: {}", dir, e);
-    }
-    dir.join("settings.json")
+    // One implementation of "where this app's %APPDATA% folder is", shared with
+    // the activity log. It used to be spelled out again here, which is how the
+    // two could have disagreed after #257 renamed the folder.
+    native::shared::paths::get_appdata_dir().join("settings.json")
 }
 
 impl AppSettings {

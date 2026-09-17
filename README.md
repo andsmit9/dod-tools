@@ -1,9 +1,9 @@
-# DoD Tools
+# DoD Studio
 
 Tooling for **Day of Defeat 1.3** (GoldSrc) demo files: parsing them for match
 analytics, and driving the engine plus HLAE to batch-record highlight clips.
 
-A creative fork of [cgdangelo/dod-tools](https://github.com/cgdangelo/dod-tools).
+A creative fork of [cgdangelo/dod-studio](https://github.com/cgdangelo/dod-studio).
 
 ---
 
@@ -29,7 +29,7 @@ The capture and render pipeline is a frag-movie workflow and is unrelated.
 > [!NOTE]
 > **The GUI was rewritten.** Earlier revisions shipped an `egui` desktop app
 > with a WebAssembly target. That has been removed. The current frontend is
-> Tauri v2 + Vite under `desktop-studio/`, and the old `dod-tools-gui` binary
+> Tauri v2 + Vite under `desktop-studio/`, and the old `dod-studio-gui` binary
 > and `trunk serve` workflow no longer exist.
 
 ---
@@ -85,7 +85,7 @@ still present, so the patch is still required.
 ## Licensing
 
 This project is MIT (see `LICENSE`), which carries two copyright lines.
-Charles D'Angelo's is from [cgdangelo/dod-tools](https://github.com/cgdangelo/dod-tools),
+Charles D'Angelo's is from [cgdangelo/dod-studio](https://github.com/cgdangelo/dod-studio),
 which this is a fork of — MIT requires that notice be retained, so it stays.
 The second covers the work done here since the fork.
 

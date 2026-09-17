@@ -9,7 +9,7 @@
       "items": [
         "Trigger any uncaught error (e.g. temporarily break something, or catch a real one in the wild) — a toast appears reading “Something went wrong (...). Details logged to crash_log.md.”",
         "The browser's own default uncaught-error console output still appears (not suppressed)",
-        "A separate “[dod-tools] Uncaught error: ...” (or “promise rejection”) line also appears in the console, easy to spot alongside the raw trace",
+        "A separate “[dod-studio] Uncaught error: ...” (or “promise rejection”) line also appears in the console, easy to spot alongside the raw trace",
         "A matching “[error] Uncaught ...” line with the message and stack appears in crash_log.md"
       ]
     },
