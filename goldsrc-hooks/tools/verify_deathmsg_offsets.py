@@ -83,6 +83,19 @@ def rust_signed(src: str, name: str) -> int:
     return int(match.group(1))
 
 
+def rust_string(src: str, name: str) -> str:
+    match = re.search(rf'const {name}: &str = "([^"]*)";', src)
+    if not match:
+        raise SystemExit(f"could not find `const {name}` in deathmsg.rs")
+    return match.group(1)
+
+
+def rust_bytes(src: str, name: str) -> bytes:
+    block = src.split(f"const {name}")[1]
+    block = block[block.index("[") : block.index("];")]
+    return bytes(int(b, 16) for b in re.findall(r"0x([0-9a-fA-F]{2})", block))
+
+
 def rust_block(src: str, name: str) -> str:
     block = src.split(f"const {name}")[1]
     return block[block.index("[") : block.index("];")]
@@ -240,15 +253,7 @@ def main() -> int:
         if verdict == "FAIL":
             ok = False
         print(f"  {verdict:4} +{rva:#x} {kind} at max={max_lines} is {value} (imm{width * 8} holds <= {limit})")
-    for rva, width in offset_sites:
-        # The imm8 site is `83 c0 xx`, which sign-extends -- so its range is
-        # signed, and a check against 0..0xff would wave through a value that
-        # silently means something else.
-        lo, hi = (-0x80, 0x7F) if width == 1 else (-(2**31), 2**31 - 1)
-        verdict = "ok" if lo <= min_offset and max_offset <= hi else "FAIL"
-        if verdict == "FAIL":
-            ok = False
-        print(f"  {verdict:4} +{rva:#x} y offset {min_offset}..{max_offset} (signed imm{width * 8} holds {lo}..{hi})")
+    print("  n/a  the y offset is a detour now, not an immediate -- see the detour pass")
 
     # -- Pass 4: apply the patch and check the result still decodes ------------
     print("\npatched images:")
@@ -285,6 +290,63 @@ def main() -> int:
             print(f"  FAIL max={new_max}: " + "; ".join(problems))
         else:
             print(f"  OK   max={new_max:<3} {new_size:>5} byte buffer, both functions decode unchanged")
+
+    # -- Pass 5: the y detour ------------------------------------------------
+    # Three claims the Rust cannot check for itself: that the signature is
+    # unique, that the span it points at still holds the bytes the stub
+    # reproduces, and that nothing branches into the middle of that span.
+    print("")
+    print("y detour:")
+    y_pattern = rust_string(src, "Y_PATTERN")
+    y_at = rust_scalar(src, "Y_DETOUR_AT")
+    stolen = rust_bytes(src, "Y_STOLEN")
+
+    rx = re.compile(
+        b"".join(b"." if t == "??" else re.escape(bytes([int(t, 16)])) for t in y_pattern.split()),
+        re.S,
+    )
+    matches = [m.start() for m in rx.finditer(pristine)]
+    if len(matches) == 1:
+        print(f"  OK   the signature matches exactly once, at +{matches[0]:#x}")
+    else:
+        ok = False
+        print(f"  FAIL the signature matches {len(matches)} times: {[hex(m) for m in matches]}")
+
+    if matches:
+        target = matches[0] + y_at
+        present = bytes(pristine[target : target + len(stolen)])
+        if present == stolen:
+            print(f"  OK   +{target:#x} holds the {len(stolen)} bytes the stub reproduces")
+        else:
+            ok = False
+            print(f"  FAIL +{target:#x} holds {present.hex(' ')}, rust reproduces {stolen.hex(' ')}")
+
+        inside = []
+        for _name, (lo, hi) in FUNCTIONS.items():
+            for ins in md.disasm(pristine[lo:hi], base + lo):
+                jump = capstone.x86.X86_GRP_JUMP in ins.groups
+                call = capstone.x86.X86_GRP_CALL in ins.groups
+                if not (jump or call):
+                    continue
+                for op in ins.operands:
+                    if op.type == capstone.x86.X86_OP_IMM:
+                        t = op.imm - base
+                        if target < t < target + len(stolen):
+                            inside.append((ins.address - base, t))
+        if inside:
+            ok = False
+            for src_rva, dst in inside:
+                print(f"  FAIL +{src_rva:#x} branches to +{dst:#x}, inside the span the jump overwrites")
+        else:
+            print("  OK   nothing branches into the span the jump overwrites")
+
+        if len(stolen) < 5:
+            ok = False
+            print(f"  FAIL the span is {len(stolen)} bytes; a near jump needs 5")
+        else:
+            print(f"  OK   {len(stolen)} bytes leaves room for the 5-byte jump")
+
+    print("")
 
     print("\nTABLES VERIFIED" if ok else "\nMISMATCH -- do not ship")
     return 0 if ok else 1

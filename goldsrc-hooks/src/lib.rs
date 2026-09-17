@@ -41,10 +41,13 @@ mod anim_fix;
 mod commands;
 mod crash;
 mod deathmsg;
+mod detour;
 mod debug;
 mod engine;
 mod names;
+mod patch;
 mod pe;
+mod scan;
 mod sound_fix;
 
 use std::sync::atomic::Ordering;

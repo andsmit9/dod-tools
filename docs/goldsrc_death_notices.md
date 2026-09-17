@@ -236,41 +236,68 @@ y differently. DoD's `Draw` starts at y = 20 and accumulates line height
 +0x2af19  add eax, 0x14                    ; else ScreenHeight/480*42 + 20
 ```
 
-`offset` patches both immediates. The second is `83 c0 xx`, `add eax, imm8`,
-which **sign-extends** — so the range is −128..127, not 0..127, and negative is
-the useful direction.
-
-That matters because `Draw` picks the feed's y down one of three paths:
+`offset` does **not** patch either immediate. It detours, the way HLAE does,
+for a reason the three code paths make obvious:
 
 ```asm
 +0x2aeba  call <spectator mode>            ; 0 unless spectating
 +0x2aebf  cmp  eax, 2
 +0x2aec2  jne  +0x2aeeb
-          ; mode 2: y comes from the spectator layout's own out-params.
-          ; Neither patch site is on this path.
+          ; mode 2: y from the spectator layout's own out-params -- no immediate
++0x2aee9  jmp  +0x2af1c
 +0x2aeeb  mov  eax, [0x19e88d4]            ; the spectator-HUD flag
-+0x2aef0  mov  dword ptr [esp+4], 20       ; <- site 1, imm32: plain y
-+0x2aefa  je   +0x2af20                    ; flag clear -> done, y = 20
++0x2aef0  mov  dword ptr [esp+4], 20       ; an absolute y
++0x2aefa  je   +0x2af20                    ; flag clear -> done
 +0x2aefc  fild [ScreenHeight]              ; flag set:
 +0x2af02  fmul 0.00208333                  ;   / 480
 +0x2af08  fmul 42.0
 +0x2af0e  fadd 0.5                         ;   round
-+0x2af19  add  eax, 20                     ; <- site 2, imm8: y = scaled + 20
++0x2af19  add  eax, 20                     ; an addend, not a y
++0x2af1c  mov  dword ptr [esp+4], eax
++0x2af20  push ebx / ebp / esi / edi ; xor edi, edi    <- all three converge
 ```
 
-So in a spectated demo the feed starts at `round(ScreenHeight / 480 × 42) + 20`
-— about **115** at 1080p, against 20 in a POV demo. That is the whole reason a
-kill feed sits lower when spectating, and `offset` is not moving a feed that was
-at 20: it is replacing the `+ 20` addend in a sum whose other term is ~95.
+Those two `20`s are the same number meaning different things: an absolute y on
+one path, an addend on top of a screen-scaled ~95 on the other — so in a
+spectated demo the feed starts near **115**, which is why a kill feed sits lower
+when spectating. Writing one value to both operands therefore places the feed
+correctly on at most one path, and mode 2 holds no immediate to write at all.
 
-To line a spectated feed up with a POV one, the offset is
-`20 − round(ScreenHeight / 480 × 42)` — **−75 at 1080p**, −55 at 720p, −107 at
-1440p. Well inside the sign-extended byte.
+All three paths converge at `+0x2af20` with y in `[esp+4]`, so the detour goes
+there and sets the **result**. One value, the same meaning everywhere, mode 2
+included.
 
-**One value goes to both sites**, and they do not mean the same thing: site 1 is
-an absolute y, site 2 an addend. `offset −75` therefore puts a POV feed at −75
-(off the top of the screen) while putting a spectated one at 20. That is fine
-when working on spectated demos and wrong if both matter in one session.
+**The span.** `+0x2af20` is `53 55 56 57 33 ff` —
+`push ebx / push ebp / push esi / push edi / xor edi, edi`. Six bytes: a
+five-byte `jmp rel32` plus one `nop`. `Draw`'s only inbound branch into that
+neighbourhood targets the first byte (from `+0x2aefa`), so nothing lands in the
+padding. `eax` and the flags are both dead there — the y was stored one
+instruction earlier and the next read of `eax` is a fresh load — so the stub may
+use them.
+
+**The stub**, hand-assembled in `offset_stub`:
+
+```asm
+cmp byte ptr [OFFSET_ACTIVE], 0
+je  .game
+mov eax, [OFFSET_VALUE]
+mov dword ptr [esp + 4], eax     ; y = ours
+.game:
+push ebx / push ebp / push esi / push edi / xor edi, edi    ; the stolen bytes
+jmp dword ptr [OFFSET_RESUME]    ; +0x2af26
+```
+
+Hand-written rather than copied, because copying the span would mean relocating
+any relative branch inside it. `offset default` clears `OFFSET_ACTIVE` and the
+game's own y flows through; nothing is ever unpatched, since there is no safe
+moment to restore bytes a thread may be executing.
+
+**Finding it.** `Y_PATTERN` is
+`A1 ?? ?? ?? ?? C7 44 24 04 14 00 00 00 85 C0 74 24`, which matches exactly once
+in `client.dll`'s code — `scan::find_unique` treats a second match as an error
+rather than taking the first, since a signature that identifies two places has
+not been proven. The convergence point is `match + 0x35`, and the bytes there
+are checked against `Y_STOLEN` before anything is written.
 
 ## 4. The console surface
 

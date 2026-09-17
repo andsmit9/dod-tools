@@ -60,13 +60,12 @@
 
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::sync::Mutex;
+use std::sync::atomic::AtomicU8;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering};
 
-use windows_sys::Win32::System::Memory::{
-    PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS, VirtualProtect,
-};
-
+use crate::detour;
 use crate::engine;
+use crate::scan;
 use crate::names::console_name;
 
 /// Every name this command answers to. `pfnAddCommand` takes a bare
@@ -153,7 +152,8 @@ impl CountKind {
 }
 
 /// The two immediates that set the y the first notice draws at. The second is
-/// an `add eax, imm8`, which is what caps [`MAX_OFFSET`].
+/// an `add eax, imm8`. The y detour below leaves both alone, but they stay in
+/// the pre-flight check as evidence this is the expected build.
 const OFFSET_SITES: &[(usize, usize)] = &[
     (0x2_aef4, 4), // +0x2aef0  c7 44 24 04  mov dword ptr [esp+4], 20
     (0x2_af1b, 1), // +0x2af19  83 c0        add eax, 20
@@ -162,16 +162,16 @@ const OFFSET_SITES: &[(usize, usize)] = &[
 /// Ceiling on `offset`, set by the `add eax, imm8` in `Draw`'s spectator
 /// branch. 127 screen pixels down from the top is a long way for a kill feed;
 /// widening that instruction would overwrite the one after it.
-const MAX_OFFSET: i32 = 127;
+const MAX_OFFSET: i32 = 4096;
 
-/// And the floor. `83 c0 xx` **sign-extends** its `imm8`, so the same byte that
-/// caps the offset at 127 reaches down to -128 — negative offsets are not a
-/// trick, they are what the encoding already holds. They are the useful
-/// direction, too: in the spectator layout `Draw` computes
-/// `y = round(ScreenHeight / 480 * 42) + offset`, about 95 + 20 at 1080p, which
-/// is why a kill feed sits lower in a spectated demo than in a POV one. Pulling
-/// it back up to the POV position means a negative offset.
-const MIN_OFFSET: i32 = -128;
+/// And the floor. Negative is meaningful: the stub writes an absolute y, and a
+/// spectated feed the game would start around 115 can be pulled above the top
+/// of the screen deliberately.
+///
+/// Neither end is an encoding limit any more. The detour stub writes a full
+/// dword, so this range is a guard against typos rather than something the
+/// instruction stream imposes -- which is why it is generous rather than tight.
+const MIN_OFFSET: i32 = -4096;
 
 /// DoD's weapon-sprite table, indexed by the third byte of a `DeathMsg`.
 /// Index 0 and anything >= 44 fall back to `d_world`, matching the bounds check
@@ -240,18 +240,8 @@ impl BlockList {
 /// Safety: `rva` must be a real code offset in the loaded module and `bytes`
 /// must be the right width for the operand living there.
 unsafe fn write_code(base: usize, rva: usize, bytes: &[u8]) -> bool {
-    let addr = (base + rva) as *mut u8;
-    let mut old: PAGE_PROTECTION_FLAGS = 0;
-    let ok = unsafe { VirtualProtect(addr as *mut c_void, bytes.len(), PAGE_EXECUTE_READWRITE, &mut old) };
-    if ok == 0 {
-        return false;
-    }
-    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), addr, bytes.len()) };
-    let mut discard: PAGE_PROTECTION_FLAGS = 0;
-    unsafe { VirtualProtect(addr as *mut c_void, bytes.len(), old, &mut discard) };
-    true
+    unsafe { crate::patch::write_code_bytes(base + rva, bytes) }
 }
-
 unsafe fn read_u32(base: usize, rva: usize) -> u32 {
     unsafe { ((base + rva) as *const u32).read_unaligned() }
 }
@@ -407,28 +397,143 @@ fn apply_max(max: i32) -> Result<(), String> {
     Ok(())
 }
 
-/// Moves the first notice's y. `STOCK_OFFSET` puts the shipped value back.
+// ── The y detour ─────────────────────────────────────────────────────────────
+//
+// `Draw` picks the feed's y down three paths -- a plain 20, a screen-scaled
+// term plus 20 when the spectator-HUD flag is set, and the spectator layout's
+// own numbers in mode 2 -- and all three converge with y in `[esp+4]` just
+// before the function saves its registers. Detouring that convergence sets the
+// *result*, so one value means the same thing on every path, including mode 2,
+// which holds no immediate to patch at all.
+//
+// This is the technique HLAE uses for the same job; see
+// `docs/goldsrc_death_notices.md`.
+
+/// Identifies the y computation. Unique across `client.dll`'s code, which
+/// [`scan::find_unique`] insists on. Wildcards cover the one absolute address.
+const Y_PATTERN: &str = "A1 ?? ?? ?? ?? C7 44 24 04 14 00 00 00 85 C0 74 24";
+
+/// Distance from the match to the convergence point (`+0x2aeeb` -> `+0x2af20`).
+const Y_DETOUR_AT: usize = 0x35;
+
+/// `push ebx; push ebp; push esi; push edi; xor edi, edi` -- the instructions
+/// the jump overwrites, reproduced verbatim at the end of the stub. Six bytes,
+/// so the five-byte jump needs one `nop` of padding. Verified by disassembly
+/// that nothing branches into the middle of them: `Draw`'s only inbound branch
+/// here targets the first byte.
+const Y_STOLEN: &[u8] = &[0x53, 0x55, 0x56, 0x57, 0x33, 0xff];
+
+/// Whether the stub should substitute our y. Read by game code, so it is an
+/// address rather than a Rust value: [`AtomicU8::as_ptr`] is what makes that
+/// sound without `static mut`.
+static OFFSET_ACTIVE: AtomicU8 = AtomicU8::new(0);
+/// The y the stub writes while [`OFFSET_ACTIVE`] is set.
+static OFFSET_VALUE: AtomicI32 = AtomicI32::new(STOCK_OFFSET);
+/// Where the stub jumps back to: the instruction after the stolen bytes.
+static OFFSET_RESUME: AtomicUsize = AtomicUsize::new(0);
+/// Installed once per process; see [`detour::Detour`] on why it is never undone.
+static OFFSET_DETOUR: Mutex<Option<detour::Detour>> = Mutex::new(None);
+
+/// The stub, hand-assembled.
+///
+/// ```asm
+/// cmp byte ptr [OFFSET_ACTIVE], 0
+/// je  .game                        ; leave y as the game computed it
+/// mov eax, [OFFSET_VALUE]
+/// mov dword ptr [esp + 4], eax     ; y = ours
+/// .game:
+/// push ebx / push ebp / push esi / push edi / xor edi, edi   ; the stolen bytes
+/// jmp dword ptr [OFFSET_RESUME]
+/// ```
+///
+/// `eax` and the flags are dead at the convergence point -- the y `Draw` just
+/// computed has already been stored, and the next read of `eax` is a fresh load
+/// -- so the stub may use both freely.
+fn offset_stub(active: usize, value: usize, resume: usize) -> Vec<u8> {
+    let substitute: Vec<u8> = [0xa1u8]                                  // mov eax, [abs32]
+        .into_iter()
+        .chain((value as u32).to_le_bytes())
+        .chain([0x89, 0x44, 0x24, 0x04])                                // mov [esp+4], eax
+        .collect();
+
+    let mut code = vec![0x80, 0x3d];                                    // cmp byte ptr [abs32],
+    code.extend_from_slice(&(active as u32).to_le_bytes());
+    code.push(0x00);                                                    //   0
+    code.extend_from_slice(&[0x74, substitute.len() as u8]);            // je over the substitution
+    code.extend_from_slice(&substitute);
+    code.extend_from_slice(Y_STOLEN);
+    code.extend_from_slice(&[0xff, 0x25]);                              // jmp dword ptr [abs32]
+    code.extend_from_slice(&(resume as u32).to_le_bytes());
+    code
+}
+
+/// Installs the y detour, once.
+fn ensure_offset_detour(base: usize) -> Result<(), String> {
+    let mut slot = OFFSET_DETOUR.lock().map_err(|_| "the detour lock is poisoned".to_string())?;
+    if slot.is_some() {
+        return Ok(());
+    }
+    // Safety: `base` is a module handle the loader gave us.
+    let found = unsafe { scan::find_unique(base, Y_PATTERN) }
+        .map_err(|why| format!("could not locate the y computation -- {why}"))?;
+    let target = found + Y_DETOUR_AT;
+
+    // The scan proves the pattern; this proves the offset from it still lands
+    // where it did, so a build that moved the convergence point fails here
+    // rather than having a jump written over the middle of something else.
+    // Safety: `target` is inside the module's code section.
+    let present = unsafe { std::slice::from_raw_parts(target as *const u8, Y_STOLEN.len()) };
+    if present != Y_STOLEN {
+        return Err(format!(
+            "expected {Y_STOLEN:02x?} at +{:#x}, found {present:02x?}",
+            target - base
+        ));
+    }
+
+    OFFSET_RESUME.store(target + Y_STOLEN.len(), Ordering::Release);
+    let stub = offset_stub(
+        OFFSET_ACTIVE.as_ptr() as usize,
+        OFFSET_VALUE.as_ptr() as usize,
+        OFFSET_RESUME.as_ptr() as usize,
+    );
+    // Safety: the span was checked byte-for-byte above, and the branch-safety
+    // condition was verified against a disassembly -- see `Y_STOLEN`.
+    let detour = unsafe { detour::install(target, Y_STOLEN.len(), &stub) }?;
+    unsafe {
+        crate::debug::report(&format!(
+            "deathmsg: y detour installed at +{:#x} (pattern matched +{:#x}), stub at {:#x}",
+            target - base,
+            found - base,
+            detour.stub_address()
+        ))
+    };
+    *slot = Some(detour);
+    Ok(())
+}
+
+/// Sets the y the feed starts at, on every code path.
 fn apply_offset(y: i32) -> Result<(), String> {
     let Some(base) = engine::client_module_base() else {
         return Err("client.dll is not loaded yet".to_string());
     };
     if !(MIN_OFFSET..=MAX_OFFSET).contains(&y) {
-        return Err(format!(
-            "expected {MIN_OFFSET}..={MAX_OFFSET}, got {y} (the spectator branch's sign-extended `add eax, imm8` sets both ends)"
-        ));
+        return Err(format!("expected {MIN_OFFSET}..={MAX_OFFSET}, got {y}"));
     }
-    ensure_verified(base)?;
-    for &(rva, width) in OFFSET_SITES {
-        let ok = if width == 4 {
-            unsafe { write_code(base, rva, &(y as u32).to_le_bytes()) } // two's complement for y < 0
-        } else {
-            unsafe { write_code(base, rva, &[y as u8]) }
-        };
-        if !ok {
-            return Err(format!("could not make +{rva:#x} writable"));
-        }
-    }
+    ensure_offset_detour(base)?;
+    OFFSET_VALUE.store(y, Ordering::Release);
+    OFFSET_ACTIVE.store(1, Ordering::Release);
     PATCHED_OFFSET.store(y, Ordering::Release);
+    Ok(())
+}
+
+/// Hands the y back to the game, the way `offset default` always meant.
+///
+/// Nothing is unpatched: the detour stays, and simply stops substituting. That
+/// is strictly safer than restoring bytes under a thread that might be
+/// executing them, and it is what HLAE does too.
+fn clear_offset() -> Result<(), String> {
+    OFFSET_ACTIVE.store(0, Ordering::Release);
+    PATCHED_OFFSET.store(OFFSET_UNSET, Ordering::Release);
     Ok(())
 }
 
@@ -622,7 +727,7 @@ fn usage() -> String {
         "usage:\n\
          \x20 {COMMAND} max <{STOCK_MAX}..{MAX_LINES}>      lines of kill feed shown at once (default {STOCK_MAX})\n\
          \x20 {COMMAND} offset <0..{MAX_OFFSET}>     y the feed starts at (default {STOCK_OFFSET})\n\
-         \x20 {COMMAND} offset default      put the y back\n\
+         \x20 {COMMAND} offset default      hand y back to the game\n\
          \x20 {COMMAND} block <id>...       hide frags involving these players\n\
          \x20 {COMMAND} block !<id>...      hide everything EXCEPT these players\n\
          \x20 {COMMAND} block clear         stop hiding anything\n\
@@ -711,17 +816,18 @@ fn dispatch(argv: &[String]) -> String {
             let Some(value) = argv.get(2) else {
                 return format!("{}{}", status(), usage());
             };
-            let wanted = if value.eq_ignore_ascii_case("default") {
-                Ok(STOCK_OFFSET)
-            } else {
-                value.parse::<i32>().map_err(|_| ())
-            };
-            match wanted {
+            if value.eq_ignore_ascii_case("default") {
+                return match clear_offset() {
+                    Ok(()) => format!("{COMMAND}: offset back to whatever the game computes\n"),
+                    Err(why) => format!("{COMMAND} offset: {why}\n"),
+                };
+            }
+            match value.parse::<i32>() {
                 Ok(y) => match apply_offset(y) {
                     Ok(()) => format!("{COMMAND}: offset = y {y}\n"),
                     Err(why) => format!("{COMMAND} offset: {why}\n"),
                 },
-                Err(()) => format!("{COMMAND} offset: expected a number or \"default\", got {value:?}\n"),
+                Err(_) => format!("{COMMAND} offset: expected a number or \"default\", got {value:?}\n"),
             }
         }
         "block" => {
@@ -803,18 +909,39 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_offset_range_is_exactly_what_a_sign_extended_imm8_holds() {
-        // `83 c0 xx` sign-extends, so both ends come from the same byte. Get
-        // this wrong in the generous direction and the write silently wraps.
-        assert_eq!(MIN_OFFSET, i8::MIN as i32);
-        assert_eq!(MAX_OFFSET, i8::MAX as i32);
-        for y in [MIN_OFFSET, -75, 0, STOCK_OFFSET, MAX_OFFSET] {
-            assert_eq!(
-                i32::from(y as u8 as i8),
-                y,
-                "{y} does not survive the round trip through the imm8 the patch writes"
-            );
-        }
+    fn the_offset_stub_assembles_to_what_the_comment_claims() {
+        let code = offset_stub(0x1111_1111, 0x2222_2222, 0x3333_3333);
+        assert_eq!(
+            code,
+            vec![
+                0x80, 0x3d, 0x11, 0x11, 0x11, 0x11, 0x00, // cmp byte [active], 0
+                0x74, 0x09,                               // je  over the substitution
+                0xa1, 0x22, 0x22, 0x22, 0x22,             // mov eax, [value]
+                0x89, 0x44, 0x24, 0x04,                   // mov [esp+4], eax
+                0x53, 0x55, 0x56, 0x57, 0x33, 0xff,       // the stolen instructions
+                0xff, 0x25, 0x33, 0x33, 0x33, 0x33,       // jmp dword [resume]
+            ]
+        );
+    }
+
+    #[test]
+    fn the_conditional_jump_skips_exactly_the_substitution() {
+        // Hand-assembled, so the one thing a typo would silently break is the
+        // `je` displacement: too small lands mid-instruction, too large skips
+        // an instruction the game needs. Derive it from the bytes themselves.
+        let code = offset_stub(0xaaaa_aaaa, 0xbbbb_bbbb, 0xcccc_cccc);
+        let je_at = code.iter().position(|&b| b == 0x74).expect("a je in the stub");
+        let landing = je_at + 2 + code[je_at + 1] as usize;
+        assert_eq!(
+            &code[landing..landing + Y_STOLEN.len()],
+            Y_STOLEN,
+            "the je lands somewhere other than the stolen instructions"
+        );
+    }
+
+    #[test]
+    fn the_stolen_span_is_long_enough_to_hold_the_jump_that_replaces_it() {
+        assert!(Y_STOLEN.len() >= 5, "a near jump needs five bytes");
         // 0 is a legitimate offset, so it must not be the "never set" sentinel.
         assert_ne!(OFFSET_UNSET, 0);
         assert!(!(MIN_OFFSET..=MAX_OFFSET).contains(&OFFSET_UNSET));
