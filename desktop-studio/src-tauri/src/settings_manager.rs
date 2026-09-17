@@ -9,6 +9,18 @@ pub struct AppSettings {
     pub hlae_path: String,
     pub hl_path: String,
     pub ffmpeg_path: Option<String>,
+    /// Override for `dodstudio_goldsrc_hooks.dll` (see `native::patch::PatcherConfig`'s
+    /// field of the same name). Blank/absent means "use the bundled default
+    /// beside this app's own install" -- see
+    /// `native::patch::default_goldsrc_hooks_dll_path`.
+    ///
+    /// The key keeps its original spelling although the DLL was renamed to
+    /// `dodstudio_goldsrc_hooks.dll`: it is persisted in the user's settings file
+    /// and never shown, so renaming it would silently discard an existing
+    /// override (the one a dev build relies on) to change a string nobody
+    /// reads.
+    #[serde(default)]
+    pub goldsrc_hooks_dll_path: Option<String>,
     pub pinned_folders: Vec<String>,
     /// Analyzer sidebar's "Recent" quick-links tier — most-recent-first,
     /// capped at 10, pushed whenever a folder selection yields a non-empty
@@ -176,6 +188,7 @@ impl Default for AppSettings {
             hlae_path: String::new(),
             hl_path: String::new(),
             ffmpeg_path: None,
+            goldsrc_hooks_dll_path: None,
             pinned_folders: Vec::new(),
             demo_folder_history: Vec::new(),
             scan_folders_for_demos: false,
