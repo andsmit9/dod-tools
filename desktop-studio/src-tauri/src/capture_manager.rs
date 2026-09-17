@@ -68,7 +68,7 @@ pub struct CapturePayload {
     /// Optional absolute path to ffmpeg.exe; falls back to bundled then PATH.
     #[serde(default)]
     pub ffmpeg_override_path: Option<String>,
-    /// Optional override for `dodtoolsHookGoldSrc.dll`; falls back to the bundled
+    /// Optional override for `dodstudio_goldsrc_hooks.dll`; falls back to the bundled
     /// default -- see `PatcherConfig::goldsrc_hooks_dll_path`.
     #[serde(default)]
     pub goldsrc_hooks_dll_path: Option<String>,

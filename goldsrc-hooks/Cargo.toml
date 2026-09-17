@@ -4,19 +4,19 @@ version.workspace = true
 edition.workspace = true
 
 [lib]
-# The shipped filename, deliberately echoing HLAE's own
-# `AfxHookGoldSrc.dll`: this DLL is injected into `hl.exe` right beside it, and
-# a name that rhymes makes the kinship (and the different owner) obvious in a
-# module list. Cargo derives the artifact name from this, so dev and installed
-# builds agree. The package and directory stay `goldsrc-hooks` -- that is our
-# own namespace, and no sibling crate carries a prefix.
-name = "dodtoolsHookGoldSrc"
+# The shipped filename. Cargo derives the artifact name from `[lib] name`, so
+# dev and installed builds agree on it.
+#
+# Snake case on purpose: this doubles as the crate name, and anything else --
+# including the `dodtoolsHookGoldSrc` this used to be, which echoed HLAE's
+# `AfxHookGoldSrc.dll` -- trips rustc's `non_snake_case`, whose only remedy is a
+# crate-wide `allow` that would also hide genuinely bad names inside the crate.
+# The product prefix earns its place here because the DLL lands in `hl.exe`'s
+# module list beside other people's: see `names.rs` on where `dodstudio_`
+# belongs. The package and directory stay `goldsrc-hooks` -- our own namespace,
+# and no sibling crate carries a prefix.
+name = "dodstudio_goldsrc_hooks"
 crate-type = ["cdylib"]
-
-# The mixed-case `[lib] name` above is a deliberate filename choice, not an
-# identifier; rustc lints the crate name for snake case regardless.
-[lints.rust]
-non_snake_case = "allow"
 
 [dependencies]
 windows-sys = { version = "0.59", features = [

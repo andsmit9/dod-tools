@@ -9,13 +9,13 @@ pub struct AppSettings {
     pub hlae_path: String,
     pub hl_path: String,
     pub ffmpeg_path: Option<String>,
-    /// Override for `dodtoolsHookGoldSrc.dll` (see `native::patch::PatcherConfig`'s
+    /// Override for `dodstudio_goldsrc_hooks.dll` (see `native::patch::PatcherConfig`'s
     /// field of the same name). Blank/absent means "use the bundled default
     /// beside this app's own install" -- see
     /// `native::patch::default_goldsrc_hooks_dll_path`.
     ///
     /// The key keeps its original spelling although the DLL was renamed to
-    /// `dodtoolsHookGoldSrc.dll`: it is persisted in the user's settings file
+    /// `dodstudio_goldsrc_hooks.dll`: it is persisted in the user's settings file
     /// and never shown, so renaming it would silently discard an existing
     /// override (the one a dev build relies on) to change a string nobody
     /// reads.

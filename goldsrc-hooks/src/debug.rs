@@ -23,7 +23,7 @@ fn timestamp() -> String {
     )
 }
 
-/// Where the log goes: `%APPDATA%\dod-tools\logs\dodtoolsHookGoldSrc.log`.
+/// Where the log goes: `%APPDATA%\dod-tools\logs\dodstudio_goldsrc_hooks.log`.
 ///
 /// The same folder the app's own activity log uses, so there is one place to
 /// look rather than two. `native`'s `activity_log_dir()` resolves it through
@@ -53,7 +53,7 @@ fn log_path() -> Option<std::path::PathBuf> {
 }
 
 /// Matches the DLL's own filename, so the log is obviously its log.
-const LOG_FILE: &str = "dodtoolsHookGoldSrc.log";
+const LOG_FILE: &str = "dodstudio_goldsrc_hooks.log";
 
 /// Appends a line to the log (see [`log_path`]). Failures are swallowed --
 /// logging must never be the thing that destabilizes the host process.
@@ -72,7 +72,7 @@ pub unsafe fn report(message: &str) {
     };
 
     if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
-        let _ = writeln!(file, "[{}]{demo} [dodtoolsHookGoldSrc] {message}", timestamp());
+        let _ = writeln!(file, "[{}]{demo} [dodstudio_goldsrc_hooks] {message}", timestamp());
     }
 }
 

@@ -125,6 +125,6 @@ fn main() -> ExitCode {
     }
 
     println!("Injected {dll_path_str} into process {pid}.");
-    println!("Check %APPDATA%\\dod-tools\\logs\\dodtoolsHookGoldSrc.log for its own diagnostics.");
+    println!("Check %APPDATA%\\dod-tools\\logs\\dodstudio_goldsrc_hooks.log for its own diagnostics.");
     ExitCode::SUCCESS
 }

@@ -420,10 +420,10 @@ pub struct PatcherConfig {
     pub hlae_path: String,
     pub game_path: String,
     pub ffmpeg_override_path: Option<String>,
-    /// Optional absolute path to `dodtoolsHookGoldSrc.dll` (the `goldsrc-hooks`
+    /// Optional absolute path to `dodstudio_goldsrc_hooks.dll` (the `goldsrc-hooks`
     /// workspace crate's companion DLL for DoD/GoldSrc-specific fixes --
     /// sound/animation corrections while spectating; see that crate's
-    /// README). Falls back to `<install dir>/goldsrc-hooks/dodtoolsHookGoldSrc.dll`
+    /// README). Falls back to `<install dir>/goldsrc-hooks/dodstudio_goldsrc_hooks.dll`
     /// (see `default_goldsrc_hooks_dll_path`) when unset, mirroring
     /// `ffmpeg_override_path`'s "override, else bundled" shape. Injected
     /// alongside `AfxHookGoldSrc.dll` by `build_hlae_process` only if the
@@ -467,14 +467,14 @@ fn default_capture_fov() -> f32 {
     90.0
 }
 
-/// Where `dodtoolsHookGoldSrc.dll` lives if nothing overrides it: Tauri's Windows
+/// Where `dodstudio_goldsrc_hooks.dll` lives if nothing overrides it: Tauri's Windows
 /// bundler places `bundle.resources` entries under a `resources` folder
 /// beside the installed app's own executable, and
 /// `desktop-studio/src-tauri/tauri.conf.json` maps this crate's release
-/// build to `resources/goldsrc-hooks/dodtoolsHookGoldSrc.dll` there. In a dev
+/// build to `resources/goldsrc-hooks/dodstudio_goldsrc_hooks.dll` there. In a dev
 /// build (`npm run tauri dev`) that folder won't exist -- Studio ->
 /// Configuration -> Paths' override field is the way to point at
-/// `target/i686-pc-windows-msvc/release/dodtoolsHookGoldSrc.dll` directly while
+/// `target/i686-pc-windows-msvc/release/dodstudio_goldsrc_hooks.dll` directly while
 /// developing. Either way, `build_hlae_process` treats a missing file here
 /// as "not installed" and simply doesn't inject it, same as any other
 /// optional path.
@@ -482,7 +482,7 @@ pub fn default_goldsrc_hooks_dll_path() -> Option<std::path::PathBuf> {
     std::env::current_exe()
         .ok()?
         .parent()
-        .map(|dir| dir.join("resources").join("goldsrc-hooks").join("dodtoolsHookGoldSrc.dll"))
+        .map(|dir| dir.join("resources").join("goldsrc-hooks").join("dodstudio_goldsrc_hooks.dll"))
 }
 
 impl PatcherConfig {
@@ -538,7 +538,7 @@ impl PatcherConfig {
             .map(std::path::PathBuf::from)
             .filter(|p| p.exists())
             .or_else(|| default_goldsrc_hooks_dll_path().filter(|p| p.exists()))
-            .or_else(|| hlae_dir.map(|parent| parent.join("dodtoolsHookGoldSrc.dll")).filter(|p| p.exists()));
+            .or_else(|| hlae_dir.map(|parent| parent.join("dodstudio_goldsrc_hooks.dll")).filter(|p| p.exists()));
         let goldsrc_hooks_dll_str = goldsrc_hooks_dll.map(|p| p.to_string_lossy().replace("/", "\\\\"));
 
         let program_path_str = hl_exe.replace("/", "\\\\");
@@ -615,13 +615,13 @@ impl PatcherConfig {
                 cmd.args(["-hookDllPath", extra_dll]);
             }
             None => log::warn!(
-                "goldsrc-hooks: no dodtoolsHookGoldSrc.dll found, so the sound/animation fixes and the \
+                "goldsrc-hooks: no dodstudio_goldsrc_hooks.dll found, so the sound/animation fixes and the \
                  dodtools_* console commands will be absent this session. Tried: override={:?}, \
                  bundled default={:?}, legacy spot beside hlae.exe={:?}. In a dev build only the \
                  override is ever present -- set Studio -> Configuration -> Paths -> GoldSrc Hooks DLL.",
                 self.goldsrc_hooks_dll_path,
                 default_goldsrc_hooks_dll_path(),
-                hlae_dir.map(|parent| parent.join("dodtoolsHookGoldSrc.dll")),
+                hlae_dir.map(|parent| parent.join("dodstudio_goldsrc_hooks.dll")),
             ),
         }
         cmd.args(["-programPath", &program_path_str, "-cmdLine", &cmd_line_str]);

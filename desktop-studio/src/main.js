@@ -1088,7 +1088,7 @@ window.addEventListener("DOMContentLoaded", async () => {
           await persistAppSettings();
         }
       } catch (err) {
-        console.error("Error selecting dodtoolsHookGoldSrc.dll:", err);
+        console.error("Error selecting dodstudio_goldsrc_hooks.dll:", err);
       }
     });
   }
