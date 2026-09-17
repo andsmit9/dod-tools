@@ -7,6 +7,8 @@ mod player;
 mod round;
 mod scoreboard;
 mod time;
+#[cfg(not(target_arch = "wasm32"))]
+mod utf16;
 mod weapon_names;
 
 use crate::{
