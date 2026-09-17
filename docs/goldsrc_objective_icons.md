@@ -69,9 +69,10 @@ extra DoD virtual sitting between `Reset` and `InitHUDData`; every HUD element
 inherits `CHudBase`'s stub for it and none of them override it, so what it is
 has not been established here.
 
-`CObjectiveIcons::Init` (`+0x2f8c0`) hooks the `InitObj`, `SetObj` and
-`TimerStatus` user messages, which is the second confirmation that this is the
-right class.
+`CObjectiveIcons::Init` (`+0x2f8c0`) hooks eight user messages — `InitObj`,
+`SetObj`, `TimerStatus`, `StartProg`, `StartProgF`, `ProgUpdate`, `CancelProg`
+and `PlayersIn` — which is the second confirmation that this is the right class,
+and incidentally the whole of DoD's capture-progress message set.
 
 ---
 
