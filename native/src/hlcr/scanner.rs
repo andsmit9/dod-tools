@@ -726,12 +726,10 @@ fn get_clip_date(img_folder_path: &Path) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
 
-    fn scratch_dir(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("dod_scanner_test_{}", name));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("failed to create scratch dir");
-        dir
+    fn scratch_dir(name: &str) -> Scratch {
+        Scratch::new(format_args!("scanner_test_{name}"))
     }
 
     fn write_frames(take: &Path, stream: &str) {
@@ -775,8 +773,7 @@ mod tests {
 
     #[test]
     fn test_missing_take_folder_is_not_renderable() {
-        let missing = std::env::temp_dir().join("dod_scanner_test_does_not_exist");
-        let _ = std::fs::remove_dir_all(&missing);
+        let missing = Scratch::absent("scanner_test_does_not_exist");
         assert!(!is_renderable_take(&missing));
     }
 
@@ -821,11 +818,8 @@ mod tests {
         std::fs::write(folder.join(VIDEO_FILE), avi).unwrap();
     }
 
-    fn scratch(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("dod_scan_{}_{}", name, std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn scratch(name: &str) -> Scratch {
+        Scratch::new(format_args!("scan_{name}"))
     }
 
     /// A stream folder holding a video with the given bytes, named `video.<ext>`.

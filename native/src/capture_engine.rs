@@ -964,6 +964,7 @@ pub fn spawn_capture_engine(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
     use std::time::Duration;
 
     /// A batch that has shown nothing unusual gets the floor. Five minutes is
@@ -1005,8 +1006,7 @@ mod tests {
     /// leaves everything else in `dod/` untouched.
     #[test]
     fn dropping_the_guard_removes_primer_and_chain_demos_when_enabled() {
-        let root = std::env::temp_dir().join(format!("dod_cleanup_guard_on_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = Scratch::new("cleanup_guard_on");
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
         std::fs::write(dod.join("dodtools_primer.dem"), b"x").unwrap();
@@ -1029,16 +1029,13 @@ mod tests {
         assert!(!dod.join("dodtools_chain_01.dem").exists());
         assert!(!dod.join("dodtools_chain_02.dem").exists());
         assert!(dod.join("not_a_chain_demo.dem").exists(), "must not touch an unrelated file");
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// `save_local_patched_copy` means the user asked to keep these files --
     /// the guard must not clean them up even with `auto_clear_temp_demos` on.
     #[test]
     fn dropping_the_guard_keeps_demos_when_a_local_copy_was_requested() {
-        let root = std::env::temp_dir().join(format!("dod_cleanup_guard_keep_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = Scratch::new("cleanup_guard_keep");
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
         std::fs::write(dod.join("dodtools_primer.dem"), b"x").unwrap();
@@ -1057,7 +1054,5 @@ mod tests {
 
         assert!(dod.join("dodtools_primer.dem").exists());
         assert!(dod.join("dodtools_chain_01.dem").exists());
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

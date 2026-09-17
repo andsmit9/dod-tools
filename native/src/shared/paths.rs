@@ -238,6 +238,7 @@ fn remove_scratch_file(path: &Path, setting: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
 
     #[test]
     fn test_take_key_uses_last_two_components_lowercased() {
@@ -290,27 +291,21 @@ mod tests {
 
     #[test]
     fn console_log_is_cleared_beside_hl_exe() {
-        let root = std::env::temp_dir().join(format!("dod_qconsole_root_{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
+        let root = Scratch::new("qconsole_root");
         let log = root.join("qconsole.log");
         std::fs::write(&log, b"console spam").unwrap();
 
         remove_console_log(&root);
 
         assert!(!log.exists(), "qconsole.log beside hl.exe should be removed");
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// Cleanup runs whether or not the engine was launched with `-condebug`,
     /// so an absent log is ordinary rather than an error worth surfacing.
     #[test]
     fn a_missing_console_log_is_not_an_error() {
-        let root = std::env::temp_dir().join(format!("dod_qconsole_none_{}", std::process::id()));
-        std::fs::create_dir_all(&root).unwrap();
-
+        let root = Scratch::new("qconsole_none");
         remove_console_log(&root);
-
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -341,7 +336,7 @@ mod tests {
     /// user's own configs, and anything wider here would be unrecoverable.
     #[test]
     fn nothing_but_the_console_log_is_touched() {
-        let root = std::env::temp_dir().join(format!("dod_qconsole_keep_{}", std::process::id()));
+        let root = Scratch::new("qconsole_keep");
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
         let keep = [
@@ -360,7 +355,6 @@ mod tests {
         for f in &keep {
             assert!(f.exists(), "{:?} is the user's file and must survive", f);
         }
-        let _ = std::fs::remove_dir_all(&root);
     }
 }
 
@@ -417,6 +411,7 @@ pub fn remove_file_retrying(path: &Path) -> Option<std::io::Error> {
 #[cfg(test)]
 mod auto_clear_previews_tests {
     use super::*;
+    use crate::test_support::Scratch;
 
     fn make_preview(dir: &Path, stem: &str) -> (PathBuf, PathBuf) {
         let demo = dir.join(format!("{stem}_preview.dem"));
@@ -426,9 +421,8 @@ mod auto_clear_previews_tests {
         (demo, sidecar)
     }
 
-    fn scratch(name: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("dod_acp_{name}_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+    fn scratch(name: &str) -> Scratch {
+        let root = Scratch::new(format_args!("acp_{name}"));
         std::fs::create_dir_all(root.join("dod")).unwrap();
         root
     }
@@ -442,7 +436,6 @@ mod auto_clear_previews_tests {
 
         assert!(!demo.exists(), "the preview demo should be gone");
         assert!(!sidecar.exists(), "its sidecar should be gone with it");
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -454,7 +447,6 @@ mod auto_clear_previews_tests {
         clear_capture_scratch(&root, false, false, true, false);
 
         assert!(demo.exists(), "a demo the user named this way is not ours to delete");
-        let _ = std::fs::remove_dir_all(&root);
     }
 
     /// The sidecar is the only thing marking a `_preview.dem` as ours. If it is
@@ -490,27 +482,23 @@ mod auto_clear_previews_tests {
         );
 
         drop(handle);
-        let _ = std::fs::remove_dir_all(&root);
     }
 }
 
 #[cfg(test)]
 mod remove_file_retrying_tests {
     use super::*;
+    use crate::test_support::Scratch;
 
     #[test]
     fn a_missing_file_is_not_an_error() {
-        let dir = std::env::temp_dir().join(format!("dod_rfr_missing_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = Scratch::new("rfr_missing");
         assert!(remove_file_retrying(&dir.join("nope.dem")).is_none());
     }
 
     #[test]
     fn an_unlocked_file_is_removed_on_the_first_attempt() {
-        let dir = std::env::temp_dir().join(format!("dod_rfr_plain_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = Scratch::new("rfr_plain");
         let file = dir.join("dodtools_chain_01.dem");
         std::fs::write(&file, b"demo").unwrap();
 
@@ -530,9 +518,7 @@ mod remove_file_retrying_tests {
     fn a_file_that_becomes_removable_partway_through_succeeds() {
         use std::os::windows::fs::OpenOptionsExt;
 
-        let dir = std::env::temp_dir().join(format!("dod_rfr_delayed_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = Scratch::new("rfr_delayed");
         let file = dir.join("dodtools_chain_02.dem");
         std::fs::write(&file, b"demo").unwrap();
 

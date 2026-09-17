@@ -1548,6 +1548,7 @@ pub fn build_director_stufftext(command: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
 
     #[test]
     fn playdemo_safe_stem_leaves_short_alphanumeric_names_alone() {
@@ -2631,8 +2632,7 @@ mod tests {
     /// !save_local_patched_copy` rather than unconditionally.
     #[test]
     fn dropping_the_workspace_guard_keeps_demos_when_a_local_copy_was_requested() {
-        let root = std::env::temp_dir().join(format!("dod_workspace_guard_keep_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+        let root = Scratch::new("workspace_guard_keep");
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
         std::fs::write(dod.join("dodtools_primer.dem"), b"x").unwrap();

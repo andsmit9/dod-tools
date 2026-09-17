@@ -152,27 +152,23 @@ pub fn fps_mismatch_warning(take_folder: &Path, render_fps: u32) -> Option<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("dod_take_meta_{}", name));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("scratch");
-        dir
-    }
+    use crate::test_support::Scratch;
 
     /// The real layout: `<capture>/<session>/chain_JJ_bN/take0000/`. Returns the
-    /// block folder (where the file goes) and the nested take folder HLAE makes.
-    fn block_with_take(name: &str, session: &str, block: &str) -> (PathBuf, PathBuf) {
-        let root = scratch(name);
+    /// block folder (where the file goes) and the nested take folder HLAE makes
+    /// -- and the guard, which the caller must hold: dropping it here would
+    /// delete the tree before the test had looked at it.
+    fn block_with_take(name: &str, session: &str, block: &str) -> (Scratch, PathBuf, PathBuf) {
+        let root = Scratch::new(format_args!("take_meta_{name}"));
         let block_folder = root.join(session).join(block);
         let take = block_folder.join("take0000");
         std::fs::create_dir_all(&take).expect("take dirs");
-        (block_folder, take)
+        (root, block_folder, take)
     }
 
     #[test]
     fn a_take_is_found_from_either_folder_render_studio_hands_out() {
-        let (block, take) = block_with_take("finds", "session_20260827_120000", "dodtools_chain_01_b0");
+        let (_root, block, take) = block_with_take("finds", "session_20260827_120000", "dodtools_chain_01_b0");
         write(&block, &SessionMeta::new("session_20260827_120000", 120)).expect("write");
 
         // The scanner admits a take at the block folder or at the nested
@@ -186,7 +182,7 @@ mod tests {
         // The question this design has to answer: capture some highlights at
         // 120, then more at 300. Each batch gets its own session folder and each
         // take carries its own file, so neither can speak for the other.
-        let root = scratch("two_batches");
+        let root = Scratch::new("take_meta_two_batches");
         let slow = root.join("session_20260827_120000").join("dodtools_chain_01_b0");
         let fast = root.join("session_20260827_130000").join("dodtools_chain_01_b0");
         std::fs::create_dir_all(&slow).expect("dirs");
@@ -206,7 +202,7 @@ mod tests {
         // consolidating takes by hand would otherwise silently relabel them with
         // whatever folder they were dropped into — the exact bug this feature
         // exists to catch, one level up.
-        let root = scratch("moved");
+        let root = Scratch::new("take_meta_moved");
         let origin = root.join("session_A").join("dodtools_chain_01_b0");
         let elsewhere = root.join("session_B");
         std::fs::create_dir_all(&origin).expect("dirs");
@@ -231,14 +227,14 @@ mod tests {
     fn a_take_with_no_metadata_is_not_a_problem() {
         // Every take captured before this existed, and any folder assembled by
         // hand. Silence is the correct answer, not a warning.
-        let (_block, take) = block_with_take("absent", "session_x", "dodtools_chain_01_b0");
+        let (_root, _block, take) = block_with_take("absent", "session_x", "dodtools_chain_01_b0");
         assert_eq!(read_for_take(&take), None);
         assert_eq!(fps_mismatch_warning(&take, 300), None);
     }
 
     #[test]
     fn an_unreadable_or_future_format_is_ignored_rather_than_guessed() {
-        let (block, take) = block_with_take("garbage", "session_x", "dodtools_chain_01_b0");
+        let (_root, block, take) = block_with_take("garbage", "session_x", "dodtools_chain_01_b0");
         std::fs::write(block.join(TAKE_FILE), b"{not json").expect("write");
         assert_eq!(read_for_take(&take), None);
 
@@ -252,14 +248,14 @@ mod tests {
 
     #[test]
     fn a_matching_rate_says_nothing() {
-        let (block, take) = block_with_take("match", "session_x", "dodtools_chain_01_b0");
+        let (_root, block, take) = block_with_take("match", "session_x", "dodtools_chain_01_b0");
         write(&block, &SessionMeta::new("s", 120)).expect("write");
         assert_eq!(fps_mismatch_warning(&take, 120), None);
     }
 
     #[test]
     fn the_warning_states_the_direction_and_the_factor() {
-        let (block, take) = block_with_take("mismatch", "session_x", "dodtools_chain_01_b0");
+        let (_root, block, take) = block_with_take("mismatch", "session_x", "dodtools_chain_01_b0");
         write(&block, &SessionMeta::new("s", 120)).expect("write");
 
         // The bug as it actually happened: captured at 120, rendered at 300.
@@ -276,7 +272,7 @@ mod tests {
     fn a_nonsense_recorded_rate_is_not_used_to_scold_the_user() {
         // A zero would divide by zero and a negative is meaningless; either way
         // there is nothing trustworthy to compare against.
-        let (block, take) = block_with_take("zero", "session_x", "dodtools_chain_01_b0");
+        let (_root, block, take) = block_with_take("zero", "session_x", "dodtools_chain_01_b0");
         write(&block, &SessionMeta::new("s", 0)).expect("write");
         assert_eq!(fps_mismatch_warning(&take, 300), None);
     }
@@ -284,7 +280,7 @@ mod tests {
     #[test]
     fn the_walk_stops_before_it_reaches_a_capture_drive() {
         // A file this far up describes a batch, or a drive, not this take.
-        let root = scratch("too_far");
+        let root = Scratch::new("take_meta_too_far");
         let deep = root.join("a").join("b").join("c").join("take0000");
         std::fs::create_dir_all(&deep).expect("dirs");
         write(&root, &SessionMeta::new("s", 120)).expect("write");

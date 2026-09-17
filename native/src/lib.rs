@@ -32,6 +32,11 @@ pub mod capture_engine;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod obs;
 
+/// Helpers this crate's own tests share. See `Scratch` on why a temporary
+/// directory needs a guard rather than a trailing `remove_dir_all` (#253).
+#[cfg(test)]
+mod test_support;
+
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
 pub struct FileInfo {
     pub created_at: SystemTime,

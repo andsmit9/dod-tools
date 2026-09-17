@@ -726,11 +726,13 @@ mod tests {
 #[cfg(test)]
 mod director_event_tests {
     use super::*;
+    use crate::test_support::Scratch;
     use std::io::{BufWriter, Read, Write};
 
     #[test]
     fn test_write_director_event_payload() {
-        let temp_path = std::env::temp_dir().join("test_write_director_event_payload.dem");
+        let scratch = Scratch::new("director_event_payload");
+        let temp_path = scratch.join("payload.dem");
         let file = std::fs::OpenOptions::new()
             .read(true)
             .write(true)

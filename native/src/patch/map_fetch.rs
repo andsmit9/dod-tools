@@ -167,6 +167,7 @@ fn download(url: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
 
     #[test]
     fn the_url_mirrors_the_path_under_dod() {
@@ -204,9 +205,7 @@ mod tests {
     fn a_map_already_present_and_already_correct_is_left_alone() {
         // No download, no rename, and no backup file left behind — the common
         // case must be free and must not touch the library.
-        let dir = std::env::temp_dir().join(format!("dod_map_fetch_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = Scratch::new("map_fetch");
 
         // A map whose checksum we can state without a real BSP: an empty lump
         // table checksums to the CRC's initial value.

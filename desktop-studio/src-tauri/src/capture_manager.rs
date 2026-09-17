@@ -1855,6 +1855,7 @@ pub async fn delete_orphaned_previews(file_paths: Vec<String>) -> Result<u32, St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
 
     fn sample_payload() -> CapturePayload {
         CapturePayload {
@@ -1972,10 +1973,14 @@ mod tests {
         assert_eq!(cfg.custom_commands[1].relation, CommandRelation::Before);
     }
 
-    fn write_temp_cfg(tag: &str, content: &str) -> String {
-        let path = std::env::temp_dir().join(format!("dod_cfgimport_{}_{}.cfg", tag, std::process::id()));
+    /// A `.cfg` inside its own scratch directory. The guard comes back with
+    /// the path and has to be held: dropping it removes the file.
+    fn write_temp_cfg(tag: &str, content: &str) -> (Scratch, String) {
+        let dir = Scratch::new(format_args!("cfgimport_{tag}"));
+        let path = dir.join("import.cfg");
         std::fs::write(&path, content).unwrap();
-        path.to_string_lossy().to_string()
+        let text = path.to_string_lossy().to_string();
+        (dir, text)
     }
 
     fn read_cfg_commands_blocking(path: String) -> Result<Vec<String>, String> {
@@ -1985,29 +1990,25 @@ mod tests {
 
     #[test]
     fn test_read_cfg_commands_strips_blank_lines_and_full_line_comments() {
-        let path = write_temp_cfg(
+        let (_dir, path) = write_temp_cfg(
             "basic",
             "// header comment\nmirv_fov 90\n\n  mirv_movie_fps 300  \n// trailing comment\nsensitivity 3\n",
         );
         let commands = read_cfg_commands_blocking(path.clone()).unwrap();
         assert_eq!(commands, vec!["mirv_fov 90", "mirv_movie_fps 300", "sensitivity 3"]);
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn test_read_cfg_commands_on_an_all_comment_file_is_empty() {
-        let path = write_temp_cfg("empty", "// just a header\n// nothing else\n");
+        let (_dir, path) = write_temp_cfg("empty", "// just a header\n// nothing else\n");
         let commands = read_cfg_commands_blocking(path.clone()).unwrap();
         assert!(commands.is_empty());
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn test_read_cfg_commands_missing_file_errs() {
-        let path = std::env::temp_dir()
-            .join(format!("dod_cfgimport_missing_{}.cfg", std::process::id()))
-            .to_string_lossy()
-            .to_string();
+        let dir = Scratch::absent("cfgimport_missing");
+        let path = dir.join("nothing.cfg").to_string_lossy().to_string();
         assert!(read_cfg_commands_blocking(path).is_err());
     }
 
@@ -2015,20 +2016,19 @@ mod tests {
     fn test_read_cfg_commands_collapses_column_alignment_padding() {
         // A hand-aligned .cfg — cvar and value padded into columns with extra
         // spaces so they line up in a text editor.
-        let path = write_temp_cfg(
+        let (_dir, path) = write_temp_cfg(
             "aligned",
             "r_decals               \"0\"\ncl_hud_objectives\t\t\"1\"\n",
         );
         let commands = read_cfg_commands_blocking(path.clone()).unwrap();
         assert_eq!(commands, vec!["r_decals \"0\"", "cl_hud_objectives \"1\""]);
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn test_read_cfg_commands_preserves_whitespace_inside_quotes() {
         // A quoted value's own spaces (a path, say) are content, not
         // alignment padding, and must survive verbatim.
-        let path = write_temp_cfg(
+        let (_dir, path) = write_temp_cfg(
             "quoted_spaces",
             "mirv_movie_filename    \"F:\\DICE  WSOD25\\02 Audio Video\\clip\"\n",
         );
@@ -2037,7 +2037,6 @@ mod tests {
             commands,
             vec!["mirv_movie_filename \"F:\\DICE  WSOD25\\02 Audio Video\\clip\""]
         );
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

@@ -535,12 +535,10 @@ pub(super) fn fold_into_take(recorded: &Path, dest: &Path) -> Result<PathBuf, St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
 
-    fn scratch(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("dod_obs_{}_{}", name, std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn scratch(name: &str) -> Scratch {
+        Scratch::new(format_args!("obs_{name}"))
     }
 
     /// The layout is load-bearing: the scanner, `take_key` and the renderer all

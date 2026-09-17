@@ -181,6 +181,7 @@ pub fn check_demo(demo: &Path, maps_dir: &Path) -> Result<(MapReference, MapStat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
 
     fn header(map: &str, checksum: u32) -> Vec<u8> {
         let mut head = vec![0u8; HEADER_READ_LEN];
@@ -190,11 +191,8 @@ mod tests {
         head
     }
 
-    fn scratch(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("dod_map_check_{}_{}", tag, std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn scratch(tag: &str) -> Scratch {
+        Scratch::new(format_args!("map_check_{tag}"))
     }
 
     #[test]

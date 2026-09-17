@@ -7,6 +7,11 @@ mod map_manager;
 mod messages;
 mod updater_manager;
 
+/// Helpers this crate's own tests share. See `Scratch` on why a temporary
+/// directory needs a guard rather than a trailing `remove_dir_all` (#253).
+#[cfg(test)]
+mod test_support;
+
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use capture_manager::{CaptureManager, CapturePayload, launch_demo_preview, generate_all_previews, launch_standalone_game, launch_obs, check_engine_processes, kill_engine_processes, scan_orphaned_previews, delete_orphaned_previews, read_cfg_commands};
 use render_manager::{

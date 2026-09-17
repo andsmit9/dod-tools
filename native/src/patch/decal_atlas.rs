@@ -327,12 +327,10 @@ pub fn default_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
 
-    fn scratch(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("dod_atlas_test_{}", name));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn scratch(name: &str) -> Scratch {
+        Scratch::new(format_args!("atlas_test_{name}"))
     }
 
     fn key() -> MapKey {
@@ -351,7 +349,8 @@ mod tests {
         let seed = scratch("seed_shipped");
         merge_and_save(&seed, &[], &key(), &[[800.0, 800.0, 800.0]]);
 
-        let (merged, stats) = merge_and_save(&user, std::slice::from_ref(&seed), &key(), &[[0.0, 0.0, 0.0]]);
+        let seeds = [seed.to_path_buf()];
+        let (merged, stats) = merge_and_save(&user, &seeds, &key(), &[[0.0, 0.0, 0.0]]);
         assert_eq!(stats.added, 1, "only the user's own coordinate is recorded");
         assert_eq!(merged.len(), 2, "but both are available to the flush");
         assert_eq!(load(&user, &key()).len(), 1, "the seed must not leak into the user store");

@@ -763,12 +763,10 @@ pub(crate) fn unquote(token: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
 
-    fn scratch(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("dod_cfg_scan_{}_{}", tag, std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
+    fn scratch(tag: &str) -> Scratch {
+        Scratch::new(format_args!("cfg_scan_{tag}"))
     }
 
     #[test]

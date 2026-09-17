@@ -2679,6 +2679,7 @@ fn report(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
     use crate::patch::types::CaptureBlock;
 
     /// `source_demo` deliberately points at nothing: every case below must
@@ -2781,11 +2782,10 @@ mod tests {
     }
 
     /// A game folder laid out as the engine expects: `hl.exe` with `dod/`
-    /// beside it. Returns the path to the exe.
-    fn fake_game(tag: &str, config_cfg: &str, movie_cfg: Option<&str>) -> std::path::PathBuf {
-        let root = std::env::temp_dir()
-            .join(format!("dod_fov_cfg_{}_{}", tag, std::process::id()));
-        let _ = std::fs::remove_dir_all(&root);
+    /// beside it. Returns the path to the exe, and the guard the caller must
+    /// hold -- dropping it here would delete the folder before it was read.
+    fn fake_game(tag: &str, config_cfg: &str, movie_cfg: Option<&str>) -> (Scratch, std::path::PathBuf) {
+        let root = Scratch::new(format_args!("fov_cfg_{tag}"));
         let dod = root.join("dod");
         std::fs::create_dir_all(&dod).unwrap();
         std::fs::write(dod.join("config.cfg"), config_cfg).unwrap();
@@ -2794,7 +2794,7 @@ mod tests {
         }
         let exe = root.join("hl.exe");
         std::fs::write(&exe, b"").unwrap();
-        exe
+        (root, exe)
     }
 
     #[test]
@@ -2803,7 +2803,7 @@ mod tests {
         // `exec movie.cfg`, movie.cfg carries `mirv_fov 105`, and the app was
         // never told. Sizing the cone for the default 90 makes it ~7 degrees
         // too narrow and calls in-shot positions hidden.
-        let exe = fake_game("found", "exec movie.cfg\n", Some("mirv_fov \"105\"\n"));
+        let (_root, exe) = fake_game("found", "exec movie.cfg\n", Some("mirv_fov \"105\"\n"));
         let config = PatcherConfig {
             game_path: exe.to_string_lossy().to_string(),
             ..PatcherConfig::default()
@@ -2919,13 +2919,11 @@ mod tests {
         // otherwise share a single `<map>_00000000` bucket — separate from the
         // bucket the same map's first-person demos fill, and unable to tell two
         // builds apart.
-        let dir = std::env::temp_dir()
-            .join(format!("dod_atlas_key_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = Scratch::new("atlas_key");
         let expected = empty_map(&dir, "dod_anzio");
 
         let opts = DecalCleanOptions {
-            maps_dir: Some(dir.clone()),
+            maps_dir: Some(dir.to_path_buf()),
             ..Default::default()
         };
 
@@ -2943,8 +2941,9 @@ mod tests {
     fn an_hltv_demo_with_no_map_available_keeps_its_zero() {
         // Nothing to resolve from, and inventing a checksum would be worse than
         // an honest shared bucket.
+        let absent = Scratch::absent("atlas_key_absent");
         let opts = DecalCleanOptions {
-            maps_dir: Some(std::env::temp_dir().join("dod_atlas_key_absent")),
+            maps_dir: Some(absent.to_path_buf()),
             ..Default::default()
         };
 
@@ -2958,7 +2957,7 @@ mod tests {
         // "was one stated?" by comparing against the default would read that as
         // silence and hand every defaulted install to its movie.cfg — here,
         // rendering the cone for 105 when the user asked for 90.
-        let exe = fake_game("states_default", "exec movie.cfg\n", Some("mirv_fov \"105\"\n"));
+        let (_root, exe) = fake_game("states_default", "exec movie.cfg\n", Some("mirv_fov \"105\"\n"));
         let config = PatcherConfig {
             game_path: exe.to_string_lossy().to_string(),
             init_commands: vec!["mirv_fov 90".to_string()],
@@ -2972,7 +2971,7 @@ mod tests {
 
     #[test]
     fn an_init_command_outranks_the_game_config() {
-        let exe = fake_game("outrank", "exec movie.cfg\n", Some("mirv_fov \"105\"\n"));
+        let (_root, exe) = fake_game("outrank", "exec movie.cfg\n", Some("mirv_fov \"105\"\n"));
         let config = PatcherConfig {
             game_path: exe.to_string_lossy().to_string(),
             init_commands: vec!["mirv_fov 120".to_string()],
@@ -2991,7 +2990,7 @@ mod tests {
         // (decal_flush_is_noop) rather than something to hide by disagreeing
         // with the config, so r_decals follows mirv_fov's precedence exactly:
         // init commands, then an executed config, then the app's default.
-        let exe = fake_game("decals_off", "exec movie.cfg\n", Some("r_decals \"0\"\n"));
+        let (_root, exe) = fake_game("decals_off", "exec movie.cfg\n", Some("r_decals \"0\"\n"));
         let config = PatcherConfig {
             game_path: exe.to_string_lossy().to_string(),
             ..PatcherConfig::default()
@@ -3002,7 +3001,7 @@ mod tests {
 
     #[test]
     fn a_nonzero_r_decals_the_game_config_sets_is_adopted() {
-        let exe = fake_game("decals_from_config", "exec movie.cfg\n", Some("r_decals \"512\"\n"));
+        let (_root, exe) = fake_game("decals_from_config", "exec movie.cfg\n", Some("r_decals \"512\"\n"));
         let config = PatcherConfig {
             game_path: exe.to_string_lossy().to_string(),
             decal_ring_limit: 128,
@@ -3014,7 +3013,7 @@ mod tests {
 
     #[test]
     fn an_init_command_still_outranks_a_game_config_for_r_decals() {
-        let exe = fake_game("decals_init_outranks", "exec movie.cfg\n", Some("r_decals \"0\"\n"));
+        let (_root, exe) = fake_game("decals_init_outranks", "exec movie.cfg\n", Some("r_decals \"0\"\n"));
         let config = PatcherConfig {
             game_path: exe.to_string_lossy().to_string(),
             init_commands: vec!["r_decals 512".to_string()],
@@ -3403,9 +3402,7 @@ mod tests {
         // the temp directory is not ours at any age.
         use std::time::{Duration, SystemTime};
 
-        let dir = std::env::temp_dir().join("dod_sweep_test");
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = Scratch::new("sweep_test");
 
         let stale = dir.join(format!("{}old_1_0.dem", SCRATCH_PREFIX));
         let fresh = dir.join(format!("{}live_2_0.dem", SCRATCH_PREFIX));

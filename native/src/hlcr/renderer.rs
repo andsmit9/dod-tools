@@ -742,13 +742,11 @@ fn get_unique_filename(output_dir: &Path, base_name: &str, ext: &str) -> String 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::Scratch;
     use crate::hlcr::config::RenderCodec;
 
-    fn scratch(name: &str) -> PathBuf {
-        let p = std::env::temp_dir().join(format!("dod_renderer_test_{}_{}", name, std::process::id()));
-        let _ = std::fs::remove_dir_all(&p);
-        std::fs::create_dir_all(&p).unwrap();
-        p
+    fn scratch(name: &str) -> Scratch {
+        Scratch::new(format_args!("renderer_test_{name}"))
     }
 
     fn source_copy_config(export_dir: &Path) -> RenderConfig {
