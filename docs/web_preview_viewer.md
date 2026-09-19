@@ -1062,6 +1062,75 @@ didn't get to.
 
 ---
 
+## Step 7 findings: mid-stream cuts play — two more transcoder bugs, real
+## engine run against a real install (2026-09-19)
+
+Retested against a real Steam Half-Life+DoD install, using a local no-zip
+loader (`dod-web-demo-viewer` branch `wip/local-dynamic-fs-test-harness`)
+and `primer.dem` (already in this repo), 300–320s cut. Confirmed
+end-to-end in a real engine run: mid-stream cut → `client connected` →
+first-person view with weapon viewmodel → kill feed with real names →
+weapon/pain events firing → `CL_DemoCompleted` after exactly the clip's
+20s → menu. **Zero `CL_ParseDeltaPacketEntitiesGS` warnings.** Verified by
+comparing two headless frames 10s apart (different location, viewmodel
+visible) and by the demo actually *completing* — a 46-second run before
+these fixes never completed a 20-second clip.
+
+The Step 6 `outgoing_sequence` fix was real but not the thing on screen.
+Two more, both in `cut()`/`encode_synthetic_payload()`:
+
+1. **The retained window was never rebased.** `cut()` keeps the section's
+   original `DemoStart` (→ `dem_jumptime` at t=0) as the first frame, and
+   `transcode_entries` rebases against the entry's *first* frame — that
+   DemoStart — so retained frames kept their original t≈300 stamps.
+   `CL_DemoReadMessage` (`cl_demo.c:963`) gates every frame on `timestamp
+   ≥ elapsed`, hands out only the first one unconditionally, then **waits
+   `lo` real seconds** for the clock to catch up. A 300s cut froze on its
+   first frame for five minutes. This is the whole "section-start works,
+   mid-stream doesn't" split (lo=0 has no gap) — and it's the floating/
+   slowly-rotating camera too: `CL_DemoInterpolateAngles` slerps between
+   the last LOADING-section angle sample at t≈0.3 and the first gameplay
+   sample at t≈300 as the clock crawls across the gap. Verified in the
+   written bytes (`examples/dump_times.rs`): `jumptime 0.000` then
+   `read 300.003` before, `read 0.003` after. Fix: subtract `lo` from every
+   retained frame right after the filter; `NextSection` pinned to
+   `end - lo`; synthetic-frame insertion now anchors on the first
+   `NetworkMessage` rather than `time >= lo`.
+
+2. **Synthetic payload message order.** It emitted `svc_packetentities`
+   *then* `svc_clientdata`. The engine only picks the ring slot the
+   *current* frame's entities go into inside `CL_ParseClientData`
+   (`cl_parse.c:1020`, `cl.parsecountmod = incoming_sequence & MASK`), and
+   `CL_ParsePacketEntitiesGS` writes into `cl.frames[cl.parsecountmod]`
+   (`cl_parse_gs.c:298`). So the 30-entity reconstruction landed in the
+   *previous* frame's slot, then clientdata moved the pointer to a slot
+   still holding a kept LOADING-section connect-time frame with 7
+   entities — hence `(7 should be 30)` on each leading post-cut delta.
+   Real GoldSrc packets are `svc_time, svc_clientdata, svc_packetentities`
+   for this reason. Fix: clientdata first. (`replay_state_before` itself
+   was right — instrumented, 30 entities.)
+
+Also: `client_data_chain` → `delta_reference_chain`, now walking
+`svc_deltapacketentities`' own `delta_sequence` too (same ring-buffer
+lookup, `cl_parse_gs.c:306-307`), stopping only once both kinds have caught
+up. Didn't change the chain for this demo but there's no reason the two
+references must agree.
+
+Viewer-side, in the local harness (not this crate): `+cl_allow_download 0`
+is required — one custom map model missing from the install made the
+engine try the recording server's `sv_downloadurl`, which can't work here
+(DNS needs a thread; SDL: "Threads are not supported on this platform") and
+retries forever, so signon never completes. And `FS.createLazyFile` does
+not work in this single-threaded build (sync XHR blocked on the main
+thread) — eager `fetch()`+`writeFile` per file instead, still no zip.
+
+Still open: DoD HUD (unchanged), weapon-fire client events report "not
+precached" even with the `.sc` files packed (Step 3 #15 — a different
+precache channel, cosmetic), and a real-GPU-browser eyeball of the camera
+by a human, which was in progress when this was written.
+
+---
+
 ## Open risks
 
 1. ~~**`PROTO_GOLDSRC` may never have been exercised for demo playback.**~~ **Resolved 2026-08-14 — it works.** Confirmed in a real browser: the engine signs onto a transcoded demo's server data, loads the real map and all player/weapon models, and renders the level. See "Step 3 findings" #12.
